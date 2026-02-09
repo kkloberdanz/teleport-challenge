@@ -261,6 +261,36 @@ As for ChaCha20, it has been designated to be sufficiently secure for [inclusion
 
 For the asymmetric cryptography component of the TLS connection, we will generate the certificates using [Elliptic Curve P-256](https://pkg.go.dev/crypto/elliptic#P256) (OpenSSL refers to it this as prime256v1). This is [NIST approved](https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/dss2/ecdsa2vs.pdf), and elliptic curve is generally preferred over RSA today.
 
+We will generating the certificates, keys, and Certificate Signing Request (CSR) files in a manor similar to this below. Notice we are creating a user named `alice`, and signing Alice's CSR with the CA.
+
+Generate CA key and CA certificate with Elliptic Curve prime256:
+```sh
+openssl ecparam -genkey -name prime256v1 -noout -out ca.key
+openssl req -new -x509 -key ca.key -out ca.crt -days 365 -subj "/CN=TeleWorker CA/O=TeleWorker"
+```
+
+Generate the server key, CSR, and certificate. This will be used by the `teleworker` server.
+```sh
+openssl ecparam -genkey -name prime256v1 -noout -out server.key
+openssl req -new -key server.key -out server.csr -subj "/CN=teleworker/O=TeleWorker"
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -out server.crt -days 365
+```
+
+Generate the certificate for the user `alice` and sign it with the CA:
+```sh
+openssl ecparam -genkey -name prime256v1 -noout -out alice.key
+openssl req -new -key alice.key -out alice.csr -subj "/CN=alice/OU=client/O=TeleWorker"
+openssl x509 -req -in alice.csr -CA ca.crt -CAkey ca.key -out alice.crt -days 365
+```
+
+After generating these, they can be verified by OpenSSL like so:
+```sh
+openssl verify -CAfile ca.crt alice.crt
+alice.crt: OK
+openssl verify -CAfile ca.crt server.crt
+server.crt: OK
+```
+
 ## Authentication and Authorization
 
 It is important to note the subtle distinction between authentication and authorization. Authentication is how you ensure that "you are who you say you are". More directly, it tells me "who you are". While authorization is a step that comes after authentication which tells me "what you are allowed to do".
