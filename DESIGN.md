@@ -158,6 +158,14 @@ Resource limits will be hard-coded on the server. Each job will receive the same
 
 Clients do not configure resource limits; the server applies these values uniformly to every job's cgroup.
 
+The following cgroups controllers will be enabled and enforced for each job:
+
+- **cpu** — The `cpu.max` file will be set to `100000 100000` (100ms quota per 100ms period), which allocates exactly 1 CPU core to the job.
+- **memory** — The `memory.max` file will be set to `524288000` (500 MiB in bytes), which caps the job's RAM usage.
+- **io** — The `io.max` file will be set to `rbps=5242880 wbps=5242880`, which limits disk read and write throughput to 5 MiB/s each. The block device major/minor number will be discovered at runtime.
+
+We will enable these controllers for child cgroups by writing `+cpu +memory +io` to `cgroup.subtree_control`.
+
 > **Note:** Configuring cgroups requires one of the following:
 >
 > - root
