@@ -92,6 +92,24 @@ Because we have the outputs buffered in memory since job creation, all calls to 
 
 We will notify readers of the outputs when more data is available by using [sync.Cond](https://pkg.go.dev/sync#Cond). Readers will call [cond.Wait()](https://pkg.go.dev/sync#Cond.Wait) to await until more data is added to the outputs buffer. The Go routine that appends data to the outputs buffer will call [cond.Broadcast()](https://pkg.go.dev/sync#Cond.Broadcast) to notify the reader that data is available. This way we will not have any busy loops.
 
+#### Output Subscriber
+
+Each subscriber (i.e., an active `telerun logs` stream) will be represented by the following interface:
+
+```go
+type Subscriber interface {
+	Read(ctx context.Context, buf []byte) (n int, err error)
+}
+```
+
+Each Subscriber will read output from a job's output buffer, and each subscriber will independently track its own offset as a field of the struct implementing this interface.
+
+Read will copy available output into `buf`, starting from the subscriber's current offset. It will block until new data is available or the context is cancelled. Read will return the number of bytes read, or an error if the context is cancelled or the job has finished and all output has been consumed (`io.EOF`).
+
+To handle position tracking, each subscriber will hold its own integer offset into the shared output buffer. When `Read` is called, the subscriber copies bytes from `buffer[offset:]` into `buf`, then advances its offset by the number of bytes copied. If the subscriber's offset equals the buffer length and the job is still running, the subscriber blocks on `sync.Cond.Wait()` until the writer appends more data and calls `Broadcast()`.
+
+To handle cancellation, each subscriber's `Read` method will accept a `context.Context`. To unblock a subscriber that is waiting on `sync.Cond`, a background goroutine will call `cond.Broadcast()` when the context is cancelled. After waking, the subscriber will check `ctx.Err()` and return it. This will terminate the gRPC stream such that if a client disconnects we will cancel the log subscription without leaving dangling goroutines.
+
 ### Stop
 
 The client may stop a job before it completes. This is accomplished using the `stop` command like so:
