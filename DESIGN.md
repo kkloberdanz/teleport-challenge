@@ -118,8 +118,7 @@ The client may stop a job before it completes. This is accomplished using the `s
 telerun stop ${JOB_ID}
 ```
 
-When the client requests for a job to be stopped, `teleworker` will send a `SIGTERM` to the job to attempt to stop it gracefully.
-If the job fails to stop in a set period of time (defaults to 10 seconds), `teleworker` will force it to terminate by setting [cgroups.kill](https://lwn.net/Articles/855924/) to `1` for the job.
+When the client requests for a job to be stopped, `teleworker` will send a `SIGKILL` and force the job to terminate by setting [cgroups.kill](https://lwn.net/Articles/855924/) to `1` for the job.
 
 ## telerun Usage
 
