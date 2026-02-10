@@ -32,11 +32,11 @@ The `telerun` client will have the following commands available:
 
 ### Start
 
-- The client will run `telerun start ...` to start a job. The client will use command line flags (described in [telerun Usage](#telerun-usage)) to configure the job (e.g., set cgroups limits)
+- The client will run `telerun start ...` to start a job. See [telerun Usage](#telerun-usage) for examples of using `telerun`.
 - This will send an RPC to the server, which is named `teleworker`.
 - The server will generate a UUID for the job ID, and return this ID to the client.
 - This job ID will be used by the client to query logs, status, or to stop the job.
-- A cgroup will be created for this job, and the limits will be set as configured by the client.
+- A cgroup will be created for this job with the server's hard-coded resource limits applied (see [cgroups](#cgroups)).
 
 Taking a look at the man pages for [cgroups(7)](https://www.man7.org/linux/man-pages/man7/cgroups.7.html), we see example below for how to add a process to a cgroup:
 >  Creating cgroups and moving processes
@@ -114,8 +114,8 @@ $ telerun start -- ls -la /tmp
   "job_id": "03f8bd5e-fc0a-4039-be56-13f675eb19a0"
 }
 
-# Start a job with resource limits (Note that IO is in MB per second.)
-$ telerun start --cpu 500 --memory 256MB --io-read 10MB --io-write 5MB -- primes.sh
+# Start another job
+$ telerun start -- primes.sh
 {
   "job_id": "368a7f1f-eb61-43d9-850a-e57b08f84979"
 }
@@ -153,6 +153,11 @@ Resource controls will be implemented via [cgroups(7)](https://www.man7.org/linu
 - The job cgroup will be placed inside this directory, like so `/sys/fs/cgroup/teleworker/$JOB_ID`
 - The `teleworker` will cleanup the cgroup directory for the job when it terminates.
 
+Resource limits will be hard-coded on the server. Each job will receive the same limits (1 CPU, 500 MiB of RAM, 5 MB/s disk read,
+  and 5 MB/s disk write.)
+
+Clients do not configure resource limits; the server applies these values uniformly to every job's cgroup.
+
 > **Note:** Configuring cgroups requires one of the following:
 >
 > - root
@@ -179,16 +184,6 @@ service TeleWorker {
 message StartJobRequest {
   string command = 1;                  // Command to run.
   repeated string args = 2;            // Arguments to give to the command.
-  ResourceLimits resource_limits = 3;  // cgroup limits to set.
-}
-
-message ResourceLimits {
-  // Common unit of CPU measurement in Kubernetes
-  // https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#meaning-of-cpu
-  uint64 cpu_millicores = 1;
-  uint64 memory_bytes = 2;      // maximum RAM
-  uint64 io_read_bps = 3;       // bytes/sec for disk read
-  uint64 io_write_bps = 4;      // bytes/sec for disk write
 }
 
 message StartJobResponse {
