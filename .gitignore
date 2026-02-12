@@ -1,3 +1,1 @@
 bin/
-proto/teleworker/v1/teleworker.pb.go
-proto/teleworker/v1/teleworker_grpc.pb.go
