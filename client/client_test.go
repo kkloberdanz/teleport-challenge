@@ -1,7 +1,6 @@
 package client_test
 
 import (
-	"context"
 	"net"
 	"testing"
 
@@ -48,7 +47,7 @@ func startTestServer(t *testing.T) string {
 func TestStartJobReturnsValidUUID(t *testing.T) {
 	addr := startTestServer(t)
 
-	jobID, err := client.StartJob(context.Background(), addr, "echo", []string{"hello"})
+	jobID, err := client.StartJob(t.Context(), addr, "echo", []string{"hello"})
 	if err != nil {
 		t.Fatalf("StartJob failed: %v", err)
 	}
@@ -58,7 +57,7 @@ func TestStartJobReturnsValidUUID(t *testing.T) {
 }
 
 func TestStartJobBadAddress(t *testing.T) {
-	_, err := client.StartJob(context.Background(), "127.0.0.1:0", "echo", []string{"hello"})
+	_, err := client.StartJob(t.Context(), "127.0.0.1:0", "echo", []string{"hello"})
 	if err == nil {
 		t.Fatal("expected error for bad address, got nil")
 	}

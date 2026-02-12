@@ -1,7 +1,6 @@
 package server_test
 
 import (
-	"context"
 	"net"
 	"testing"
 
@@ -64,7 +63,7 @@ func startTestServer(t *testing.T) pb.TeleWorkerClient {
 func TestStartJobReturnsValidUUID(t *testing.T) {
 	client := startTestServer(t)
 
-	resp, err := client.StartJob(context.Background(), &pb.StartJobRequest{
+	resp, err := client.StartJob(t.Context(), &pb.StartJobRequest{
 		Command: "echo",
 		Args:    []string{"hello"},
 	})
@@ -79,7 +78,7 @@ func TestStartJobReturnsValidUUID(t *testing.T) {
 func TestStartJobEmptyCommand(t *testing.T) {
 	client := startTestServer(t)
 
-	_, err := client.StartJob(context.Background(), &pb.StartJobRequest{})
+	_, err := client.StartJob(t.Context(), &pb.StartJobRequest{})
 	if err == nil {
 		t.Fatal("expected error for empty command, got nil")
 	}
@@ -92,7 +91,7 @@ func TestStartJobEmptyCommand(t *testing.T) {
 func TestGetJobStatusUnimplemented(t *testing.T) {
 	client := startTestServer(t)
 
-	_, err := client.GetJobStatus(context.Background(), &pb.GetJobStatusRequest{
+	_, err := client.GetJobStatus(t.Context(), &pb.GetJobStatusRequest{
 		JobId: "test-job",
 	})
 	if err == nil {
@@ -107,7 +106,7 @@ func TestGetJobStatusUnimplemented(t *testing.T) {
 func TestStopJobUnimplemented(t *testing.T) {
 	client := startTestServer(t)
 
-	_, err := client.StopJob(context.Background(), &pb.StopJobRequest{
+	_, err := client.StopJob(t.Context(), &pb.StopJobRequest{
 		JobId: "test-job",
 	})
 	if err == nil {
@@ -122,7 +121,7 @@ func TestStopJobUnimplemented(t *testing.T) {
 func TestStreamOutputUnimplemented(t *testing.T) {
 	client := startTestServer(t)
 
-	stream, err := client.StreamOutput(context.Background(), &pb.StreamOutputRequest{
+	stream, err := client.StreamOutput(t.Context(), &pb.StreamOutputRequest{
 		JobId: "test-job",
 	})
 	if err != nil {
