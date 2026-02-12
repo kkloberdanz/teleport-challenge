@@ -26,9 +26,8 @@ func TestMain(m *testing.M) {
 // they will be testing different aspects of the implementation, i.e., client
 // specific functionality vs server specific functionality.
 
-// startTestServer starts a gRPC server and returns a connected client and a
-// cleanup function.
-func startTestServer(t *testing.T) (pb.TeleWorkerClient, func()) {
+// startTestServer starts a gRPC server and returns a connected client.
+func startTestServer(t *testing.T) pb.TeleWorkerClient {
 	t.Helper()
 
 	listen, err := net.Listen("tcp", "127.0.0.1:0")
@@ -55,16 +54,15 @@ func startTestServer(t *testing.T) (pb.TeleWorkerClient, func()) {
 		t.Fatalf("failed to connect: %v", err)
 	}
 
-	cleanup := func() {
+	t.Cleanup(func() {
 		conn.Close()
 		grpcServer.Stop()
-	}
-	return pb.NewTeleWorkerClient(conn), cleanup
+	})
+	return pb.NewTeleWorkerClient(conn)
 }
 
 func TestStartJobReturnsValidUUID(t *testing.T) {
-	client, cleanup := startTestServer(t)
-	defer cleanup()
+	client := startTestServer(t)
 
 	resp, err := client.StartJob(context.Background(), &pb.StartJobRequest{
 		Command: "echo",
@@ -79,8 +77,7 @@ func TestStartJobReturnsValidUUID(t *testing.T) {
 }
 
 func TestStartJobEmptyCommand(t *testing.T) {
-	client, cleanup := startTestServer(t)
-	defer cleanup()
+	client := startTestServer(t)
 
 	_, err := client.StartJob(context.Background(), &pb.StartJobRequest{})
 	if err == nil {
@@ -93,8 +90,7 @@ func TestStartJobEmptyCommand(t *testing.T) {
 
 // Job status is not yet implemented, ensure the server returns a correct response.
 func TestGetJobStatusUnimplemented(t *testing.T) {
-	client, cleanup := startTestServer(t)
-	defer cleanup()
+	client := startTestServer(t)
 
 	_, err := client.GetJobStatus(context.Background(), &pb.GetJobStatusRequest{
 		JobId: "test-job",
@@ -109,8 +105,7 @@ func TestGetJobStatusUnimplemented(t *testing.T) {
 
 // Job stop is not yet implemented, ensure the server returns a correct response.
 func TestStopJobUnimplemented(t *testing.T) {
-	client, cleanup := startTestServer(t)
-	defer cleanup()
+	client := startTestServer(t)
 
 	_, err := client.StopJob(context.Background(), &pb.StopJobRequest{
 		JobId: "test-job",
@@ -125,8 +120,7 @@ func TestStopJobUnimplemented(t *testing.T) {
 
 // Job output is not yet implemented, ensure the server returns a correct response.
 func TestStreamOutputUnimplemented(t *testing.T) {
-	client, cleanup := startTestServer(t)
-	defer cleanup()
+	client := startTestServer(t)
 
 	stream, err := client.StreamOutput(context.Background(), &pb.StreamOutputRequest{
 		JobId: "test-job",

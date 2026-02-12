@@ -23,9 +23,8 @@ func TestMain(m *testing.M) {
 // they will be testing different aspects of the implementation, i.e., client
 // specific functionality vs server specific functionality.
 
-// startTestServer starts a gRPC server and returns its address and a cleanup
-// function.
-func startTestServer(t *testing.T) (addr string, cleanup func()) {
+// startTestServer starts a gRPC server and returns its address.
+func startTestServer(t *testing.T) string {
 	t.Helper()
 
 	listen, err := net.Listen("tcp", "127.0.0.1:0")
@@ -42,12 +41,12 @@ func startTestServer(t *testing.T) (addr string, cleanup func()) {
 		}
 	}()
 
-	return listen.Addr().String(), func() { grpcServer.Stop() }
+	t.Cleanup(func() { grpcServer.Stop() })
+	return listen.Addr().String()
 }
 
 func TestStartJobReturnsValidUUID(t *testing.T) {
-	addr, cleanup := startTestServer(t)
-	defer cleanup()
+	addr := startTestServer(t)
 
 	jobID, err := client.StartJob(context.Background(), addr, "echo", []string{"hello"})
 	if err != nil {
