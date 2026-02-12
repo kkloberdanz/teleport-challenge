@@ -224,7 +224,7 @@ type GetJobStatusResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	Status        JobStatus              `protobuf:"varint,2,opt,name=status,proto3,enum=teleworker.v1.JobStatus" json:"status,omitempty"`
-	ExitCode      int32                  `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	ExitCode      *int32                 `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -274,8 +274,8 @@ func (x *GetJobStatusResponse) GetStatus() JobStatus {
 }
 
 func (x *GetJobStatusResponse) GetExitCode() int32 {
-	if x != nil {
-		return x.ExitCode
+	if x != nil && x.ExitCode != nil {
+		return *x.ExitCode
 	}
 	return 0
 }
@@ -461,11 +461,13 @@ const file_proto_teleworker_v1_teleworker_proto_rawDesc = "" +
 	"\x10StartJobResponse\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\",\n" +
 	"\x13GetJobStatusRequest\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"|\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"\x8f\x01\n" +
 	"\x14GetJobStatusResponse\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x120\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x18.teleworker.v1.JobStatusR\x06status\x12\x1b\n" +
-	"\texit_code\x18\x03 \x01(\x05R\bexitCode\",\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x18.teleworker.v1.JobStatusR\x06status\x12 \n" +
+	"\texit_code\x18\x03 \x01(\x05H\x00R\bexitCode\x88\x01\x01B\f\n" +
+	"\n" +
+	"_exit_code\",\n" +
 	"\x13StreamOutputRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"*\n" +
 	"\x14StreamOutputResponse\x12\x12\n" +
@@ -534,6 +536,7 @@ func file_proto_teleworker_v1_teleworker_proto_init() {
 	if File_proto_teleworker_v1_teleworker_proto != nil {
 		return
 	}
+	file_proto_teleworker_v1_teleworker_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

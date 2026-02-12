@@ -27,7 +27,7 @@ message GetJobStatusRequest {
 message GetJobStatusResponse {
   string job_id = 1;
   JobStatus status = 2;
-  int32 exit_code = 3;
+  optional int32 exit_code = 3;
 }
 
 enum JobStatus {
