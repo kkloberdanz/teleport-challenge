@@ -1,0 +1,56 @@
+syntax = "proto3";
+package teleworker.v1;
+
+option go_package = "github.com/kkloberdanz/teleworker/proto/teleworker/v1;teleworkerv1";
+
+service TeleWorker {
+  rpc StartJob(StartJobRequest) returns (StartJobResponse);
+  rpc GetJobStatus(GetJobStatusRequest) returns (GetJobStatusResponse);
+  rpc StreamOutput(StreamOutputRequest) returns (stream StreamOutputResponse);
+  rpc StopJob(StopJobRequest) returns (StopJobResponse);
+}
+
+message StartJobRequest {
+  string command = 1;                  // Command to run.
+  repeated string args = 2;            // Arguments to give to the command.
+}
+
+message StartJobResponse {
+  string job_id = 1;        // Only contains ID for the job that was submitted.
+}
+
+// Query the status of the job, used by `telerun status ...`
+message GetJobStatusRequest {
+  string job_id = 1;
+}
+
+message GetJobStatusResponse {
+  string job_id = 1;
+  JobStatus status = 2;
+  int32 exit_code = 3;
+}
+
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_SUBMITTED = 1;
+  JOB_STATUS_RUNNING = 2;
+  JOB_STATUS_SUCCESS = 3;
+  JOB_STATUS_FAILED = 4;
+  JOB_STATUS_KILLED = 5;
+}
+
+// Request the output of stdout and stderr, used by `telerun logs ...`
+message StreamOutputRequest {
+  string job_id = 1;
+}
+
+// Receive the output of stdout and stderr, used by `telerun logs ...`
+message StreamOutputResponse {
+  bytes data = 1;
+}
+
+message StopJobRequest {
+  string job_id = 1;
+}
+
+message StopJobResponse {}
