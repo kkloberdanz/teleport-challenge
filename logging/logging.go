@@ -16,6 +16,5 @@ func Init() {
 			level = slog.LevelDebug
 		}
 	}
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
-	slog.SetDefault(slog.New(handler))
+	slog.SetLogLoggerLevel(level)
 }
