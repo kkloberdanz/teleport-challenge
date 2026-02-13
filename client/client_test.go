@@ -47,7 +47,13 @@ func startTestServer(t *testing.T) string {
 func TestStartJobReturnsValidUUID(t *testing.T) {
 	addr := startTestServer(t)
 
-	jobID, err := client.StartJob(t.Context(), addr, "echo", []string{"hello"})
+	c, err := client.New(addr)
+	if err != nil {
+		t.Fatalf("client.New failed: %v", err)
+	}
+	t.Cleanup(func() { c.Close() })
+
+	jobID, err := c.StartJob(t.Context(), "echo", []string{"hello"})
 	if err != nil {
 		t.Fatalf("StartJob failed: %v", err)
 	}
@@ -57,7 +63,13 @@ func TestStartJobReturnsValidUUID(t *testing.T) {
 }
 
 func TestStartJobBadAddress(t *testing.T) {
-	_, err := client.StartJob(t.Context(), "127.0.0.1:0", "echo", []string{"hello"})
+	c, err := client.New("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("client.New failed: %v", err)
+	}
+	t.Cleanup(func() { c.Close() })
+
+	_, err = c.StartJob(t.Context(), "echo", []string{"hello"})
 	if err == nil {
 		t.Fatal("expected error for bad address, got nil")
 	}

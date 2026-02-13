@@ -11,22 +11,42 @@ import (
 	pb "github.com/kkloberdanz/teleworker/proto/teleworker/v1"
 )
 
-// StartJob connects to the teleworker gRPC server at provided address and
-// starts a job. It returns the job ID created by the server.
-func StartJob(ctx context.Context, address, command string, args []string) (string, error) {
-	// TODO: Will replace with TLS in issue 5:
-	// https://github.com/kkloberdanz/teleport-challenge/issues/5
-	creds := insecure.NewCredentials()
+// Client wraps a gRPC connection to the teleworker service.
+type Client struct {
+	conn   *grpc.ClientConn
+	client pb.TeleWorkerClient
+}
 
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(creds))
-	if err != nil {
-		return "", fmt.Errorf("failed to connect: %w", err)
+// New creates a new Client connected to the teleworker gRPC server at address.
+// If no dial options are provided, insecure credentials are used by default.
+func New(address string, opts ...grpc.DialOption) (*Client, error) {
+	if len(opts) == 0 {
+		// TODO: Will replace with TLS in issue 5:
+		// https://github.com/kkloberdanz/teleport-challenge/issues/5
+		opts = []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		}
 	}
-	defer conn.Close()
 
-	c := pb.NewTeleWorkerClient(conn)
+	conn, err := grpc.NewClient(address, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect: %w", err)
+	}
 
-	resp, err := c.StartJob(ctx, &pb.StartJobRequest{
+	return &Client{
+		conn:   conn,
+		client: pb.NewTeleWorkerClient(conn),
+	}, nil
+}
+
+// Close the underlying gRPC connection.
+func (c *Client) Close() error {
+	return c.conn.Close()
+}
+
+// StartJob starts a job on the teleworker server and returns the job ID.
+func (c *Client) StartJob(ctx context.Context, command string, args []string) (string, error) {
+	resp, err := c.client.StartJob(ctx, &pb.StartJobRequest{
 		Command: command,
 		Args:    args,
 	})

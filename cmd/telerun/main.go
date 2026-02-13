@@ -47,6 +47,12 @@ func cmdStart(cmd *cobra.Command, args []string) error {
 		"addr", address,
 	)
 
+	teleClient, err := client.New(address)
+	if err != nil {
+		return err
+	}
+	defer teleClient.Close()
+
 	command := args[0]
 	commandArgs := args[1:]
 	slog.Info(
@@ -55,7 +61,7 @@ func cmdStart(cmd *cobra.Command, args []string) error {
 		"arguments", commandArgs,
 	)
 
-	jobID, err := client.StartJob(context.Background(), address, command, commandArgs)
+	jobID, err := teleClient.StartJob(context.Background(), command, commandArgs)
 	if err != nil {
 		return err
 	}
