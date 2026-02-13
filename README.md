@@ -31,6 +31,48 @@ Update your PATH so that the protoc compiler can find the plugins:
 export PATH="$PATH:$(go env GOPATH)/bin"
 ```
 
+### Compile
+
+Generate protobuf code:
+
+```sh
+make proto
+```
+
+Build the `teleworker` and `telerun` binaries:
+
+```sh
+make build
+```
+
+### Test
+
+Run tests (includes goroutine leak detection via [goleak](https://github.com/uber-go/goleak)):
+
+```sh
+make test
+```
+
+Run tests with the race detector:
+
+```sh
+make race
+```
+
+## Usage
+
+Start the server:
+
+```sh
+LOG_LEVEL=info ./bin/teleworker
+```
+
+Submit a job:
+
+```sh
+LOG_LEVEL=info ./bin/telerun start -- ls -l
+```
+
 ## Design
 
 Please see the [Design Document](DESIGN.md)
