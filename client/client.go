@@ -56,3 +56,26 @@ func (c *Client) StartJob(ctx context.Context, command string, args []string) (s
 
 	return resp.GetJobId(), nil
 }
+
+// GetJobStatus returns the job's status and optional exit code.
+func (c *Client) GetJobStatus(ctx context.Context, jobID string) (pb.JobStatus, *int32, error) {
+	resp, err := c.client.GetJobStatus(ctx, &pb.GetJobStatusRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		return pb.JobStatus_JOB_STATUS_UNSPECIFIED, nil, fmt.Errorf("failed to get job status: %w", err)
+	}
+
+	return resp.GetStatus(), resp.ExitCode, nil
+}
+
+// StopJob stops a running job.
+func (c *Client) StopJob(ctx context.Context, jobID string) error {
+	_, err := c.client.StopJob(ctx, &pb.StopJobRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to stop job: %w", err)
+	}
+	return nil
+}

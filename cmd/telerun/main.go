@@ -2,7 +2,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/kkloberdanz/teleworker/client"
 	"github.com/kkloberdanz/teleworker/logging"
+	pb "github.com/kkloberdanz/teleworker/proto/teleworker/v1"
 )
 
 var address string
@@ -33,7 +33,21 @@ func main() {
 		RunE:  cmdStart,
 	}
 
-	rootCmd.AddCommand(startCmd)
+	statusCmd := &cobra.Command{
+		Use:   "status <job_id>",
+		Short: "Get the status of a job",
+		Args:  cobra.ExactArgs(1),
+		RunE:  cmdStatus,
+	}
+
+	stopCmd := &cobra.Command{
+		Use:   "stop <job_id>",
+		Short: "Stop a running job",
+		Args:  cobra.ExactArgs(1),
+		RunE:  cmdStop,
+	}
+
+	rootCmd.AddCommand(startCmd, statusCmd, stopCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -61,7 +75,7 @@ func cmdStart(cmd *cobra.Command, args []string) error {
 		"arguments", commandArgs,
 	)
 
-	jobID, err := teleClient.StartJob(context.Background(), command, commandArgs)
+	jobID, err := teleClient.StartJob(cmd.Context(), command, commandArgs)
 	if err != nil {
 		return err
 	}
@@ -82,4 +96,64 @@ func cmdStart(cmd *cobra.Command, args []string) error {
 	fmt.Println(string(b))
 
 	return nil
+}
+
+func cmdStatus(cmd *cobra.Command, args []string) error {
+	teleClient, err := client.New(address)
+	if err != nil {
+		return err
+	}
+	defer teleClient.Close()
+
+	jobStatus, exitCode, err := teleClient.GetJobStatus(cmd.Context(), args[0])
+	if err != nil {
+		return err
+	}
+
+	output := struct {
+		JobID    string `json:"job_id"`
+		Status   string `json:"status"`
+		ExitCode *int32 `json:"exit_code,omitempty"`
+	}{
+		JobID:    args[0],
+		Status:   statusString(jobStatus),
+		ExitCode: exitCode,
+	}
+
+	b, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal status: %w", err)
+	}
+	fmt.Println(string(b))
+
+	return nil
+}
+
+func cmdStop(cmd *cobra.Command, args []string) error {
+	teleClient, err := client.New(address)
+	if err != nil {
+		return err
+	}
+	defer teleClient.Close()
+
+	return teleClient.StopJob(cmd.Context(), args[0])
+}
+
+func statusString(s pb.JobStatus) string {
+	switch s {
+	case pb.JobStatus_JOB_STATUS_UNSPECIFIED:
+		return "unspecified"
+	case pb.JobStatus_JOB_STATUS_SUBMITTED:
+		return "submitted"
+	case pb.JobStatus_JOB_STATUS_RUNNING:
+		return "running"
+	case pb.JobStatus_JOB_STATUS_SUCCESS:
+		return "success"
+	case pb.JobStatus_JOB_STATUS_FAILED:
+		return "failed"
+	case pb.JobStatus_JOB_STATUS_KILLED:
+		return "killed"
+	default:
+		return "unknown"
+	}
 }

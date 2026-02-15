@@ -13,6 +13,8 @@ import (
 
 	pb "github.com/kkloberdanz/teleworker/proto/teleworker/v1"
 	"github.com/kkloberdanz/teleworker/server"
+	"github.com/kkloberdanz/teleworker/testutil"
+	"github.com/kkloberdanz/teleworker/worker"
 )
 
 // Enable goleak to ensure no goroutines have been leaked.
@@ -21,7 +23,7 @@ func TestMain(m *testing.M) {
 }
 
 // Note: There is some redundancy between the server tests and the client tests,
-// however, as this project progresses, these redundancies will disapear, as
+// however, as this project progresses, these redundancies will disappear, as
 // they will be testing different aspects of the implementation, i.e., client
 // specific functionality vs server specific functionality.
 
@@ -34,8 +36,11 @@ func startTestServer(t *testing.T) pb.TeleWorkerClient {
 		t.Fatalf("failed to listen: %v", err)
 	}
 
+	w := worker.New(worker.Options{})
+	srv := server.New(w)
+
 	grpcServer := grpc.NewServer()
-	pb.RegisterTeleWorkerServer(grpcServer, &server.Server{})
+	pb.RegisterTeleWorkerServer(grpcServer, srv)
 
 	// Server listens in the background.
 	go func() {
@@ -87,33 +92,121 @@ func TestStartJobEmptyCommand(t *testing.T) {
 	}
 }
 
-// Job status is not yet implemented, ensure the server returns a correct response.
-func TestGetJobStatusUnimplemented(t *testing.T) {
+func TestGetJobStatus(t *testing.T) {
 	client := startTestServer(t)
 
-	_, err := client.GetJobStatus(t.Context(), &pb.GetJobStatusRequest{
-		JobId: "test-job",
+	resp, err := client.StartJob(t.Context(), &pb.StartJobRequest{
+		Command: "true",
 	})
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	if err != nil {
+		t.Fatalf("StartJob failed: %v", err)
 	}
-	if s, ok := status.FromError(err); !ok || s.Code() != codes.Unimplemented {
-		t.Fatalf("expected Unimplemented, got %v", err)
+
+	var statusResp *pb.GetJobStatusResponse
+	testutil.PollUntil(t, "job to finish", func() bool {
+		var err error
+		statusResp, err = client.GetJobStatus(t.Context(), &pb.GetJobStatusRequest{JobId: resp.GetJobId()})
+		if err != nil {
+			t.Fatalf("GetJobStatus failed: %v", err)
+		}
+		return statusResp.GetStatus() != pb.JobStatus_JOB_STATUS_RUNNING
+	})
+	if statusResp.GetStatus() != pb.JobStatus_JOB_STATUS_SUCCESS {
+		t.Fatalf("expected JOB_STATUS_SUCCESS, got %v", statusResp.GetStatus())
+	}
+	if statusResp.GetExitCode() != 0 {
+		t.Fatalf("expected exit code 0, got %d", statusResp.GetExitCode())
 	}
 }
 
-// Job stop is not yet implemented, ensure the server returns a correct response.
-func TestStopJobUnimplemented(t *testing.T) {
+func TestGetJobStatusNotFound(t *testing.T) {
 	client := startTestServer(t)
 
-	_, err := client.StopJob(t.Context(), &pb.StopJobRequest{
-		JobId: "test-job",
+	_, err := client.GetJobStatus(t.Context(), &pb.GetJobStatusRequest{
+		JobId: "nonexistent-job",
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if s, ok := status.FromError(err); !ok || s.Code() != codes.Unimplemented {
-		t.Fatalf("expected Unimplemented, got %v", err)
+	if s, ok := status.FromError(err); !ok || s.Code() != codes.NotFound {
+		t.Fatalf("expected NotFound, got %v", err)
+	}
+}
+
+func TestStopJob(t *testing.T) {
+	client := startTestServer(t)
+
+	resp, err := client.StartJob(t.Context(), &pb.StartJobRequest{
+		Command: "sleep",
+		Args:    []string{"60"},
+	})
+	if err != nil {
+		t.Fatalf("StartJob failed: %v", err)
+	}
+
+	_, err = client.StopJob(t.Context(), &pb.StopJobRequest{
+		JobId: resp.GetJobId(),
+	})
+	if err != nil {
+		t.Fatalf("StopJob failed: %v", err)
+	}
+
+	var statusResp *pb.GetJobStatusResponse
+	testutil.PollUntil(t, "job to be killed", func() bool {
+		var err error
+		statusResp, err = client.GetJobStatus(t.Context(), &pb.GetJobStatusRequest{JobId: resp.GetJobId()})
+		if err != nil {
+			t.Fatalf("GetJobStatus failed: %v", err)
+		}
+		return statusResp.GetStatus() != pb.JobStatus_JOB_STATUS_RUNNING
+	})
+	if statusResp.GetStatus() != pb.JobStatus_JOB_STATUS_KILLED {
+		t.Fatalf("expected JOB_STATUS_KILLED, got %v", statusResp.GetStatus())
+	}
+}
+
+func TestStopJobNotFound(t *testing.T) {
+	client := startTestServer(t)
+
+	_, err := client.StopJob(t.Context(), &pb.StopJobRequest{
+		JobId: "nonexistent-job",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if s, ok := status.FromError(err); !ok || s.Code() != codes.NotFound {
+		t.Fatalf("expected NotFound, got %v", err)
+	}
+}
+
+func TestStopFinishedJob(t *testing.T) {
+	client := startTestServer(t)
+
+	resp, err := client.StartJob(t.Context(), &pb.StartJobRequest{
+		Command: "true",
+	})
+	if err != nil {
+		t.Fatalf("StartJob failed: %v", err)
+	}
+
+	// Wait for the job to finish.
+	testutil.PollUntil(t, "job to finish", func() bool {
+		statusResp, err := client.GetJobStatus(t.Context(), &pb.GetJobStatusRequest{JobId: resp.GetJobId()})
+		if err != nil {
+			t.Fatalf("GetJobStatus failed: %v", err)
+		}
+		return statusResp.GetStatus() != pb.JobStatus_JOB_STATUS_RUNNING
+	})
+
+	// Stopping a finished job should return FailedPrecondition.
+	_, err = client.StopJob(t.Context(), &pb.StopJobRequest{
+		JobId: resp.GetJobId(),
+	})
+	if err == nil {
+		t.Fatal("expected error stopping finished job, got nil")
+	}
+	if s, ok := status.FromError(err); !ok || s.Code() != codes.FailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %v", err)
 	}
 }
 
