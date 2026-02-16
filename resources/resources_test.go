@@ -6,24 +6,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kkloberdanz/teleworker/resources"
 	"github.com/kkloberdanz/teleworker/testutil"
 )
 
 func TestCreateAndCleanupCgroup(t *testing.T) {
-	testutil.SkipIfNoCgroupV2(t)
-
-	mgr, err := resources.NewManager()
-	if err != nil {
-		t.Fatalf("NewManager failed: %v", err)
-	}
+	mgr := testutil.RequireManager(t)
 
 	cg, err := mgr.CreateCgroup("test-job-1")
 	if err != nil {
 		t.Fatalf("CreateCgroup failed: %v", err)
 	}
 
-	cgPath := "/sys/fs/cgroup/teleworker/test-job-1"
+	cgPath := filepath.Join(mgr.ParentPath(), "test-job-1")
 	if _, err := os.Stat(cgPath); err != nil {
 		t.Fatalf("cgroup directory does not exist: %v", err)
 	}
@@ -38,12 +32,7 @@ func TestCreateAndCleanupCgroup(t *testing.T) {
 }
 
 func TestResourceLimitsWritten(t *testing.T) {
-	testutil.SkipIfNoCgroupV2(t)
-
-	mgr, err := resources.NewManager()
-	if err != nil {
-		t.Fatalf("NewManager failed: %v", err)
-	}
+	mgr := testutil.RequireManager(t)
 
 	cg, err := mgr.CreateCgroup("test-job-2")
 	if err != nil {
@@ -51,7 +40,7 @@ func TestResourceLimitsWritten(t *testing.T) {
 	}
 	t.Cleanup(func() { cg.Cleanup() })
 
-	cgPath := "/sys/fs/cgroup/teleworker/test-job-2"
+	cgPath := filepath.Join(mgr.ParentPath(), "test-job-2")
 
 	cpuMax, err := os.ReadFile(filepath.Join(cgPath, "cpu.max"))
 	if err != nil {
@@ -71,12 +60,7 @@ func TestResourceLimitsWritten(t *testing.T) {
 }
 
 func TestKillCgroup(t *testing.T) {
-	testutil.SkipIfNoCgroupV2(t)
-
-	mgr, err := resources.NewManager()
-	if err != nil {
-		t.Fatalf("NewManager failed: %v", err)
-	}
+	mgr := testutil.RequireManager(t)
 
 	cg, err := mgr.CreateCgroup("test-job-3")
 	if err != nil {

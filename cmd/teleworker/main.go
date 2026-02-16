@@ -38,7 +38,7 @@ func main() {
 }
 
 func runServer(cmd *cobra.Command, args []string) error {
-	cgroupMgr, err := resources.NewManager()
+	cgroupMgr, err := resources.NewManager("/sys/fs/cgroup/teleworker")
 	if err != nil {
 		return fmt.Errorf("failed to configure cgroups (requires root): %w", err)
 	}

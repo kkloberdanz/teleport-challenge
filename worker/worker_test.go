@@ -255,7 +255,7 @@ func TestCgroupOOMKillsJob(t *testing.T) {
 	// oom 1
 	// oom_kill 1
 	// oom_group_kill 0
-	cgPath := filepath.Join("/sys/fs/cgroup/teleworker", jobID)
+	cgPath := filepath.Join(mgr.ParentPath(), jobID)
 	data, err := os.ReadFile(filepath.Join(cgPath, "memory.events"))
 	if err != nil {
 		t.Fatalf("failed to read memory.events: %v", err)

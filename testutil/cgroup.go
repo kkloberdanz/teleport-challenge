@@ -3,8 +3,10 @@ package testutil
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/kkloberdanz/teleworker/resources"
 )
 
@@ -21,13 +23,17 @@ func SkipIfNoCgroupV2(t *testing.T) {
 }
 
 // RequireManager skips the test if cgroups are unavailable and returns a
-// Manager otherwise.
+// Manager that uses a unique cgroup directory. The directory is cleaned up
+// when the test finishes.
 func RequireManager(t *testing.T) resources.Manager {
 	t.Helper()
 	SkipIfNoCgroupV2(t)
-	mgr, err := resources.NewManager()
+
+	parentPath := filepath.Join("/sys/fs/cgroup", "teleworker-test-"+uuid.New().String())
+	mgr, err := resources.NewManager(parentPath)
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
+	t.Cleanup(mgr.Cleanup)
 	return *mgr
 }

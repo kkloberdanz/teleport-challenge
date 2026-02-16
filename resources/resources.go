@@ -11,8 +11,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const parentDir = "/sys/fs/cgroup/teleworker"
-
 // Manager is used to create cgroups.
 type Manager struct {
 	parentPath string
@@ -26,29 +24,40 @@ type Cgroup struct {
 
 // NewManager creates the parent cgroup directory and enables controllers.
 // Returns an error if cgroup v2 is not available or permissions are insufficient.
-func NewManager() (*Manager, error) {
+// The parentPath specifies where to create job cgroups (e.g. "/sys/fs/cgroup/teleworker").
+func NewManager(parentPath string) (*Manager, error) {
 	if _, err := os.Stat("/sys/fs/cgroup/cgroup.controllers"); err != nil {
 		return nil, fmt.Errorf("cgroup v2 not available: %w", err)
 	}
 
 	// Kill any stale processes and remove the directory left over from a
 	// previous run (e.g. if teleworker was killed with SIGKILL).
-	cleanupStaleDir(parentDir)
+	cleanupStaleDir(parentPath)
 
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
+	if err := os.MkdirAll(parentPath, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create parent cgroup: %w", err)
 	}
 
 	// We'll be enabling CPU, Memory, and Disk IO controllers.
 	if err := os.WriteFile(
-		filepath.Join(parentDir, "cgroup.subtree_control"),
+		filepath.Join(parentPath, "cgroup.subtree_control"),
 		[]byte("+cpu +memory +io"),
 		0644,
 	); err != nil {
 		return nil, fmt.Errorf("failed to enable cgroup controllers: %w", err)
 	}
 
-	return &Manager{parentPath: parentDir}, nil
+	return &Manager{parentPath: parentPath}, nil
+}
+
+// ParentPath returns the parent cgroup directory path.
+func (m *Manager) ParentPath() string {
+	return m.parentPath
+}
+
+// Cleanup kills all processes in the parent cgroup and removes the directory tree.
+func (m *Manager) Cleanup() {
+	cleanupStaleDir(m.parentPath)
 }
 
 // CreateCgroup creates a cgroup for the given job ID, writes resource limits,
