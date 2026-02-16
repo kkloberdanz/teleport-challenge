@@ -12,7 +12,7 @@ import (
 var ErrJobNotRunning = errors.New("job not running")
 
 // JobStatus represents the current state of a job.
-type JobStatus int
+type Status int
 
 const (
 	// Job statuses. A job should never have StatusUnspecified. This would
