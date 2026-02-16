@@ -90,7 +90,7 @@ func (s *Server) StopJob(ctx context.Context, req *pb.StopJobRequest) (*pb.StopJ
 	return &pb.StopJobResponse{}, nil
 }
 
-func mapJobStatus(s job.JobStatus) pb.JobStatus {
+func mapJobStatus(s job.Status) pb.JobStatus {
 	switch s {
 	case job.StatusSubmitted:
 		return pb.JobStatus_JOB_STATUS_SUBMITTED

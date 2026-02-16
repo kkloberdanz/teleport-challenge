@@ -11,7 +11,7 @@ import (
 // ErrJobNotRunning is returned when attempting to stop a non-running job.
 var ErrJobNotRunning = errors.New("job not running")
 
-// JobStatus represents the current state of a job.
+// Status represents the current state of a job.
 type Status int
 
 const (
@@ -19,7 +19,7 @@ const (
 	// indicate a bug. This was included as the zero value so we can have a
 	// mechanism to detect a bug in setting the status, since a status of 0
 	// would indicate that an unexpected bug happened.
-	StatusUnspecified JobStatus = iota
+	StatusUnspecified Status = iota
 	StatusSubmitted
 	StatusRunning
 	StatusSuccess
@@ -36,7 +36,7 @@ const (
 
 // StatusResult holds the status and optional exit code for a job.
 type StatusResult struct {
-	Status   JobStatus
+	Status   Status
 	ExitCode *int
 }
 

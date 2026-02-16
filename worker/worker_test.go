@@ -270,9 +270,9 @@ func TestCgroupOOMKillsJob(t *testing.T) {
 }
 
 // waitForStatus polls until the job reaches the expected status or times out.
-func waitForStatus(t *testing.T, w *worker.Worker, jobID string, expected job.JobStatus) job.JobStatus {
+func waitForStatus(t *testing.T, w *worker.Worker, jobID string, expected job.Status) job.Status {
 	t.Helper()
-	var st job.JobStatus
+	var st job.Status
 	testutil.PollUntil(t, fmt.Sprintf("status %v", expected), func() bool {
 		result, err := w.GetJobStatus(jobID)
 		if err != nil {

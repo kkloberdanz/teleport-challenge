@@ -20,7 +20,7 @@ type localJob struct {
 	id        string            // Unique job identifier.
 	command   string            // Executable path.
 	args      []string          // Command line arguments.
-	status    JobStatus         // Current job status.
+	status    Status            // Current job status.
 	exitCode  *int              // Process exit code: `nil` if not yet exited or unknown.
 	cmd       *exec.Cmd         // Underlying OS process.
 	cgroup    *resources.Cgroup // Resource limits: `nil` if running without cgroups.
