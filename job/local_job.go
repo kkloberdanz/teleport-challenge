@@ -222,20 +222,27 @@ func (l *localJob) Wait() {
 		}
 	}()
 
-	// If Stop already set killed, leave status as killed.
-	if l.status == StatusKilled {
-		return
-	}
-
 	if err != nil {
-		l.status = StatusFailed
+		// If Stop already set killed, leave status as killed.
+		if l.status != StatusKilled {
+			l.status = StatusFailed
+		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			ec := exitErr.ExitCode()
+			// Note: if the process was killed by a signal, then the Go standard
+			// library will assign the exit code to -1.
+			//
+			// Exact text from the doc:
+			//> ExitCode returns the exit code of the exited process, or -1 if
+			//> the process hasn't exited or was terminated by a signal.
+			// See: https://pkg.go.dev/os#ProcessState.ExitCode
 			l.exitCode = &ec
 		}
 	} else {
-		l.status = StatusSuccess
+		if l.status != StatusKilled {
+			l.status = StatusSuccess
+		}
 		ec := 0
 		l.exitCode = &ec
 	}
