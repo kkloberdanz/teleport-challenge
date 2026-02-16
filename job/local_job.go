@@ -208,7 +208,8 @@ func (l *localJob) Stop() error {
 }
 
 // Wait blocks until the process exits, then updates the job status and exit
-// code and cleans up cgroup resources.
+// code and cleans up cgroup resources. This function invokes Cmd.Wait,
+// therefore it can only be called once.
 func (l *localJob) Wait() {
 	err := l.cmd.Wait()
 
