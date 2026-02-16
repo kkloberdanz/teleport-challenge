@@ -206,6 +206,8 @@ func (l *localJob) Stop() error {
 		}
 	}
 	l.status = StatusKilled
+	ec := 128 + int(syscall.SIGKILL)
+	l.exitCode = &ec
 
 	return nil
 }
@@ -232,15 +234,15 @@ func (l *localJob) Wait() {
 		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			ec := exitErr.ExitCode()
-			// Note: if the process was killed by a signal, then the Go standard
-			// library will assign the exit code to -1.
-			//
-			// Exact text from the doc:
-			//> ExitCode returns the exit code of the exited process, or -1 if
-			//> the process hasn't exited or was terminated by a signal.
-			// See: https://pkg.go.dev/os#ProcessState.ExitCode
-			l.exitCode = &ec
+			// Check if the process was terminated by a signal. If so, then
+			// calculate the correct exit code by applying 128 + <signal_number>
+			if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+				ec := 128 + int(ws.Signal())
+				l.exitCode = &ec
+			} else {
+				ec := exitErr.ExitCode()
+				l.exitCode = &ec
+			}
 		}
 	} else {
 		if l.status != StatusKilled {
