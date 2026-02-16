@@ -31,10 +31,7 @@ const (
 type JobType int
 
 const (
-	// Currently only local jobs are accepted. This can be extended later to
-	// allow launching Docker jobs.
-	JobTypeLocal  JobType = 1
-	JobTypeDocker JobType = 2
+	JobTypeLocal JobType = 1
 )
 
 // StatusResult holds the status and optional exit code for a job.
