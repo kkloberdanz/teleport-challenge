@@ -12,6 +12,9 @@ import (
 	"github.com/kkloberdanz/teleworker/resources"
 )
 
+// localJob manages the lifetime of the job, and therefore the job's cgroup.
+// Once properly constructed, localJob will be responsible for cleaning up the
+// cgroup it was provided.
 type localJob struct {
 	mu        sync.Mutex        // Guards status and exitCode.
 	id        string            // Unique job identifier.
