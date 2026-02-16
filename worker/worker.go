@@ -23,14 +23,14 @@ var ErrJobNotFound = errors.New("job not found")
 type Worker struct {
 	mu        sync.RWMutex
 	jobs      map[string]job.Job // TODO: This would ideally be stored in a database. Using a Map for simplicity.
-	cgroupMgr *resources.Manager // nil if cgroups unavailable
+	cgroupMgr resources.Manager
 	noCleanup bool
 }
 
 // Options configures a Worker.
 type Options struct {
-	CgroupMgr *resources.Manager // nil if cgroups unavailable
-	NoCleanup bool               // If true, skip cgroup cleanup when jobs exit. Used for testing so we can inspect the cgroup directory after a job finishes.
+	CgroupMgr resources.Manager
+	NoCleanup bool // If true, skip cgroup cleanup when jobs exit. Used for testing so we can inspect the cgroup directory after a job finishes.
 }
 
 // New creates a Worker.
@@ -54,20 +54,14 @@ func (w *Worker) trackJob(jobID string, j job.Job) {
 func (w *Worker) StartJob(jobType job.JobType, command string, args []string) (string, error) {
 	jobID := uuid.New().String()
 
-	var cg *resources.Cgroup
-	if w.cgroupMgr != nil {
-		var err error
-		cg, err = w.cgroupMgr.CreateCgroup(jobID)
-		if err != nil {
-			return "", fmt.Errorf("failed to create cgroup: %w", err)
-		}
+	cg, err := w.cgroupMgr.CreateCgroup(jobID)
+	if err != nil {
+		return "", fmt.Errorf("failed to create cgroup: %w", err)
 	}
 
 	j, err := job.NewJob(jobType, jobID, command, args, job.Options{NoCleanup: w.noCleanup, Cgroup: cg})
 	if err != nil {
-		if cg != nil {
-			cg.Cleanup()
-		}
+		cg.Cleanup()
 		return "", err
 	}
 

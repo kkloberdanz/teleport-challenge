@@ -16,7 +16,6 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/kkloberdanz/teleworker/job"
-	"github.com/kkloberdanz/teleworker/resources"
 	"github.com/kkloberdanz/teleworker/testutil"
 	"github.com/kkloberdanz/teleworker/worker"
 )
@@ -25,12 +24,20 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+// newTestWorker creates a Worker backed by a real cgroup manager.
+// Tests are skipped if cgroups are unavailable.
+func newTestWorker(t *testing.T) *worker.Worker {
+	t.Helper()
+	mgr := testutil.RequireManager(t)
+	return worker.New(worker.Options{CgroupMgr: mgr})
+}
+
 // TODO: Can we make a test if killing teleworker with -9 also kills the child
 // procs? This has been tested and verified manually, and a unit test should be
 // feasible (perhaps using /proc/self/exe?) but will be a little tricky.
 
 func TestStartJobReturnsUUID(t *testing.T) {
-	w := worker.New(worker.Options{})
+	w := newTestWorker(t)
 
 	jobID, err := w.StartJob(job.JobTypeLocal, "echo", []string{"hello"})
 	if err != nil {
@@ -45,7 +52,7 @@ func TestStartJobReturnsUUID(t *testing.T) {
 }
 
 func TestStartJobBadCommand(t *testing.T) {
-	w := worker.New(worker.Options{})
+	w := newTestWorker(t)
 
 	_, err := w.StartJob(job.JobTypeLocal, "nonexistent-command-that-does-not-exist", nil)
 	if err == nil {
@@ -54,7 +61,7 @@ func TestStartJobBadCommand(t *testing.T) {
 }
 
 func TestJobRunsToSuccess(t *testing.T) {
-	w := worker.New(worker.Options{})
+	w := newTestWorker(t)
 
 	jobID, err := w.StartJob(job.JobTypeLocal, "true", nil)
 	if err != nil {
@@ -76,7 +83,7 @@ func TestJobRunsToSuccess(t *testing.T) {
 }
 
 func TestJobRunsToFailed(t *testing.T) {
-	w := worker.New(worker.Options{})
+	w := newTestWorker(t)
 
 	jobID, err := w.StartJob(job.JobTypeLocal, "false", nil)
 	if err != nil {
@@ -98,7 +105,7 @@ func TestJobRunsToFailed(t *testing.T) {
 }
 
 func TestStopRunningJob(t *testing.T) {
-	w := worker.New(worker.Options{})
+	w := newTestWorker(t)
 
 	jobID, err := w.StartJob(job.JobTypeLocal, "sleep", []string{"60"})
 	if err != nil {
@@ -131,7 +138,7 @@ func TestStopRunningJob(t *testing.T) {
 }
 
 func TestStopFinishedJob(t *testing.T) {
-	w := worker.New(worker.Options{})
+	w := newTestWorker(t)
 
 	jobID, err := w.StartJob(job.JobTypeLocal, "true", nil)
 	if err != nil {
@@ -150,7 +157,7 @@ func TestStopFinishedJob(t *testing.T) {
 }
 
 func TestGetStatusNotFound(t *testing.T) {
-	w := worker.New(worker.Options{})
+	w := newTestWorker(t)
 
 	_, err := w.GetJobStatus("nonexistent-job-id")
 	if err == nil {
@@ -166,7 +173,7 @@ func TestStopJobKillsChildProcesses(t *testing.T) {
 		t.Skip("skipping: flock not available")
 	}
 
-	w := worker.New(worker.Options{})
+	w := newTestWorker(t)
 	tmpDir := t.TempDir()
 
 	// Each child acquires an exclusive flock, writes a ready marker, then
@@ -220,14 +227,9 @@ func skipIfNoPython3(t *testing.T) {
 }
 
 func TestCgroupOOMKillsJob(t *testing.T) {
-	testutil.SkipIfNoCgroupV2(t)
 	skipIfNoPython3(t)
 
-	mgr, err := resources.NewManager()
-	if err != nil {
-		t.Fatalf("NewManager failed: %v", err)
-	}
-
+	mgr := testutil.RequireManager(t)
 	w := worker.New(worker.Options{CgroupMgr: mgr, NoCleanup: true})
 
 	// Allocate 600 MiB, which exceeds the 500 MiB memory limit.
@@ -314,7 +316,7 @@ func waitForFiles(t *testing.T, dir, prefix string, n int) {
 // starting, polling, and stopping jobs from many goroutines simultaneously.
 // Run with -race to detect data races.
 func TestConcurrentStartQueryStop(t *testing.T) {
-	w := worker.New(worker.Options{})
+	w := newTestWorker(t)
 
 	const n = 20
 	jobIDs := make([]string, n)

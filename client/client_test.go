@@ -34,7 +34,8 @@ func startTestServer(t *testing.T) string {
 		t.Fatalf("failed to listen: %v", err)
 	}
 
-	w := worker.New(worker.Options{})
+	mgr := testutil.RequireManager(t)
+	w := worker.New(worker.Options{CgroupMgr: mgr})
 	srv := server.New(w)
 
 	grpcServer := grpc.NewServer()

@@ -43,7 +43,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to configure cgroups (requires root): %w", err)
 	}
 
-	w := worker.New(worker.Options{CgroupMgr: cgroupMgr})
+	w := worker.New(worker.Options{CgroupMgr: *cgroupMgr})
 	srv := server.New(w)
 
 	listen, err := net.Listen("tcp", address)

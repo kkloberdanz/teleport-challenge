@@ -4,6 +4,8 @@ package testutil
 import (
 	"os"
 	"testing"
+
+	"github.com/kkloberdanz/teleworker/resources"
 )
 
 // SkipIfNoCgroupV2 skips the test if cgroup v2 is not available or the
@@ -16,4 +18,16 @@ func SkipIfNoCgroupV2(t *testing.T) {
 	if _, err := os.Stat("/sys/fs/cgroup/cgroup.controllers"); err != nil {
 		t.Skip("skipping: cgroup v2 not available")
 	}
+}
+
+// RequireManager skips the test if cgroups are unavailable and returns a
+// Manager otherwise.
+func RequireManager(t *testing.T) resources.Manager {
+	t.Helper()
+	SkipIfNoCgroupV2(t)
+	mgr, err := resources.NewManager()
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	return *mgr
 }
