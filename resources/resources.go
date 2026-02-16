@@ -61,13 +61,25 @@ func (m *Manager) CreateCgroup(jobID string) (*Cgroup, error) {
 
 	// CPU: 1 core (100ms quota per 100ms period).
 	if err := os.WriteFile(filepath.Join(path, "cpu.max"), []byte("100000 100000"), 0644); err != nil {
-		os.Remove(path)
+		if rmErr := os.Remove(path); rmErr != nil {
+			slog.Warn(
+				"failed to remove cgroup directory",
+				"path", path,
+				"error", rmErr,
+			)
+		}
 		return nil, fmt.Errorf("failed to set cpu.max: %w", err)
 	}
 
 	// Memory: 500 MiB.
 	if err := os.WriteFile(filepath.Join(path, "memory.max"), []byte("524288000"), 0644); err != nil {
-		os.Remove(path)
+		if rmErr := os.Remove(path); rmErr != nil {
+			slog.Warn(
+				"failed to remove cgroup directory",
+				"path", path,
+				"error", rmErr,
+			)
+		}
 		return nil, fmt.Errorf("failed to set memory.max: %w", err)
 	}
 
@@ -97,7 +109,13 @@ func (m *Manager) CreateCgroup(jobID string) (*Cgroup, error) {
 
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY, 0)
 	if err != nil {
-		os.Remove(path)
+		if rmErr := os.Remove(path); rmErr != nil {
+			slog.Warn(
+				"failed to remove cgroup directory",
+				"path", path,
+				"error", rmErr,
+			)
+		}
 		return nil, fmt.Errorf("failed to open cgroup directory fd: %w", err)
 	}
 
