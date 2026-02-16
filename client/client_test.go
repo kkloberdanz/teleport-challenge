@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/kkloberdanz/teleworker/client"
+	"github.com/kkloberdanz/teleworker/job"
 	pb "github.com/kkloberdanz/teleworker/proto/teleworker/v1"
 	"github.com/kkloberdanz/teleworker/server"
 	"github.com/kkloberdanz/teleworker/testutil"
@@ -94,17 +95,17 @@ func TestGetJobStatus(t *testing.T) {
 		t.Fatalf("StartJob failed: %v", err)
 	}
 
-	var st pb.JobStatus
+	var st job.Status
 	testutil.PollUntil(t, "job to finish", func() bool {
 		var err error
 		st, _, err = c.GetJobStatus(t.Context(), jobID)
 		if err != nil {
 			t.Fatalf("GetJobStatus failed: %v", err)
 		}
-		return st != pb.JobStatus_JOB_STATUS_RUNNING
+		return st != job.StatusRunning
 	})
-	if st != pb.JobStatus_JOB_STATUS_SUCCESS {
-		t.Fatalf("expected JOB_STATUS_SUCCESS, got %v", st)
+	if st != job.StatusSuccess {
+		t.Fatalf("expected StatusSuccess, got %v", st)
 	}
 }
 
@@ -126,16 +127,16 @@ func TestStopJob(t *testing.T) {
 		t.Fatalf("StopJob failed: %v", err)
 	}
 
-	var st pb.JobStatus
+	var st job.Status
 	testutil.PollUntil(t, "job to be killed", func() bool {
 		var err error
 		st, _, err = c.GetJobStatus(t.Context(), jobID)
 		if err != nil {
 			t.Fatalf("GetJobStatus failed: %v", err)
 		}
-		return st != pb.JobStatus_JOB_STATUS_RUNNING
+		return st != job.StatusRunning
 	})
-	if st != pb.JobStatus_JOB_STATUS_KILLED {
-		t.Fatalf("expected JOB_STATUS_KILLED, got %v", st)
+	if st != job.StatusKilled {
+		t.Fatalf("expected StatusKilled, got %v", st)
 	}
 }

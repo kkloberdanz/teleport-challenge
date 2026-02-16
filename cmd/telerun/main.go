@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/kkloberdanz/teleworker/client"
+	"github.com/kkloberdanz/teleworker/job"
 	"github.com/kkloberdanz/teleworker/logging"
-	pb "github.com/kkloberdanz/teleworker/proto/teleworker/v1"
 )
 
 var address string
@@ -139,19 +139,19 @@ func cmdStop(cmd *cobra.Command, args []string) error {
 	return teleClient.StopJob(cmd.Context(), args[0])
 }
 
-func statusString(s pb.JobStatus) string {
+func statusString(s job.Status) string {
 	switch s {
-	case pb.JobStatus_JOB_STATUS_UNSPECIFIED:
+	case job.StatusUnspecified:
 		return "unspecified"
-	case pb.JobStatus_JOB_STATUS_SUBMITTED:
+	case job.StatusSubmitted:
 		return "submitted"
-	case pb.JobStatus_JOB_STATUS_RUNNING:
+	case job.StatusRunning:
 		return "running"
-	case pb.JobStatus_JOB_STATUS_SUCCESS:
+	case job.StatusSuccess:
 		return "success"
-	case pb.JobStatus_JOB_STATUS_FAILED:
+	case job.StatusFailed:
 		return "failed"
-	case pb.JobStatus_JOB_STATUS_KILLED:
+	case job.StatusKilled:
 		return "killed"
 	default:
 		return "unknown"
