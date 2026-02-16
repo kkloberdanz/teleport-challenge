@@ -66,7 +66,7 @@ func (c *Client) GetJobStatus(ctx context.Context, jobID string) (pb.JobStatus, 
 		return pb.JobStatus_JOB_STATUS_UNSPECIFIED, nil, fmt.Errorf("failed to get job status: %w", err)
 	}
 
-	return resp.GetStatus(), resp.ExitCode, nil
+	return resp.GetStatus(), resp.GetExitCode(), nil
 }
 
 // StopJob stops a running job.
