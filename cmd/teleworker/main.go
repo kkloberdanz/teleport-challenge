@@ -38,15 +38,9 @@ func main() {
 }
 
 func runServer(cmd *cobra.Command, args []string) error {
-	var cgroupMgr *resources.Manager
-	mgr, err := resources.NewManager()
+	cgroupMgr, err := resources.NewManager()
 	if err != nil {
-		slog.Warn(
-			"cgroups unavailable, running without resource limits",
-			"error", err,
-		)
-	} else {
-		cgroupMgr = mgr
+		return fmt.Errorf("failed to configure cgroups (requires root): %w", err)
 	}
 
 	w := worker.New(worker.Options{CgroupMgr: cgroupMgr})
