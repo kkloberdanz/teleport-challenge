@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -158,6 +160,9 @@ func cleanupStaleDir(dir string) {
 		return
 	}
 
+	// Wait for all processes to exit before removing directories.
+	awaitDepopulated(dir)
+
 	// Remove child cgroup directories, then the parent.
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -181,6 +186,24 @@ func cleanupStaleDir(dir string) {
 			"path", dir,
 			"error", err,
 		)
+	}
+}
+
+// awaitDepopulated polls cgroup.events until "populated 0" indicates all
+// processes have exited. This is best-effort; errors and timeouts are silently
+// ignored. This could also be done more efficiently with inotify on
+// cgroup.events instead of polling.
+func awaitDepopulated(dir string) {
+	eventsPath := filepath.Join(dir, "cgroup.events")
+	for range 50 {
+		data, err := os.ReadFile(eventsPath)
+		if err != nil {
+			return
+		}
+		if strings.Contains(string(data), "populated 0") {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
