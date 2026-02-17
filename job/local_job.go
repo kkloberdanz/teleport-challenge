@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -32,63 +31,23 @@ type localJob struct {
 // that the job we run does not have permissions to the user that is running the
 // teleworker server.
 
-// pidNamespaceFlags returns the Cloneflags and optional UID/GID mappings
-// needed to run the child in its own PID namespace.
-//
-// Note: This looks a little complex, but the rationale is to make it so that if
-// the teleworker dies unexpectedly (e.g., gets a SIGKILL), then we want all of
-// the jobs to be killed as well. This is setup so that it works regardless if
-// the teleworker is running as root or not.
-//
-// Problem: We need to ensure that if teleworker dies (e.g., if it gets killed
-// with a SIGKILL signal), then we want all of its child processes to die.
-// We can leverage cgroups to achieve this, but what if cgroups are not
-// available? (e.g., if the server is run as a non-root user, then we cannot
-// configure cgroups.)
-//
-// Solution: For the non-cgroups use case, we can launch the child processes in
-// a new PID namespace. This way the new process will get launched under a new
-// PID 1. If the process with PID 1 dies, then the kernel will sigkill all
-// processes that PID owns. Because we launch the child processes with
-// Pdeathsig: syscall.SIGKILL, when teleworker dies, it will send a sigkill to
-// this child process. Because this child has the PID of 1 in its process
-// namespace, the kernel will then SIGKILL any child processes in this
-// namespace.
-//
-// When running as root, `CLONE_NEWPID` alone suffices. Without root, we also
-// create a user namespace (`CLONE_NEWUSER`) and map the current UID/GID into
-// it so the child retains file-access permissions.
-func pidNamespaceFlags() (uintptr, []syscall.SysProcIDMap, []syscall.SysProcIDMap) {
-	uid := os.Getuid()
-	if uid == 0 {
-		return syscall.CLONE_NEWPID, nil, nil
-	}
-	gid := os.Getgid()
-	return syscall.CLONE_NEWPID | syscall.CLONE_NEWUSER,
-		// Map the user ID in the namespace (i.e., ContainerID) to the user ID on the host system.
-		[]syscall.SysProcIDMap{{ContainerID: uid, HostID: uid, Size: 1}},
-		// Map the group ID in the namespace (i.e., ContainerID) to the group ID on the host system.
-		[]syscall.SysProcIDMap{{ContainerID: gid, HostID: gid, Size: 1}}
-}
-
-func (l *localJob) buildCmd(usePIDNS bool) *exec.Cmd {
+func (l *localJob) buildCmd() *exec.Cmd {
 	cmd := exec.Command(l.command, l.args...)
+	// Use a PID namespace so that when the direct child dies (e.g. via
+	// Pdeathsig when teleworker exits), all of its descendants are also
+	// killed by the kernel. When PID 1 in a PID namespace exits, the
+	// kernel sends SIGKILL to every remaining process in that namespace.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		// Launch the job as a process group so that we can send signals to all
 		// child processes launched by this job.
 		Setpgid: true,
 		// If the teleworker process dies, kill the child process.
 		Pdeathsig: syscall.SIGKILL,
-	}
-	// Use a PID namespace so that when the direct child dies (e.g. via
-	// Pdeathsig when teleworker exits), all of its descendants are also
-	// killed by the kernel. When PID 1 in a PID namespace exits, the
-	// kernel sends SIGKILL to every remaining process in that namespace.
-	if usePIDNS {
-		flags, uidMap, gidMap := pidNamespaceFlags()
-		cmd.SysProcAttr.Cloneflags = flags
-		cmd.SysProcAttr.UidMappings = uidMap
-		cmd.SysProcAttr.GidMappings = gidMap
+		// This is used to ensure proper cleanup. The process launched will run
+		// in a new PID namespace, which means it will start with a PID of 1.
+		// once it dies, the kernel will ensure that all child procs of PID 1
+		// will be SIGKILLed.
+		Cloneflags: syscall.CLONE_NEWPID,
 	}
 	if l.cgroup != nil {
 		cmd.SysProcAttr.CgroupFD = l.cgroup.FD() // Ensure the process is added to the cgroup when it is created.
@@ -107,18 +66,12 @@ func (l *localJob) Start() error {
 		return errors.New("job already started")
 	}
 
-	// Try to start with a PID namespace. If that fails (e.g. user namespaces
-	// are disabled), fall back to starting without one.
-	cmd := l.buildCmd(true)
+	cmd := l.buildCmd()
 	if err := cmd.Start(); err != nil {
-		cmd = l.buildCmd(false)
-		if err := cmd.Start(); err != nil {
-			if l.cgroup != nil {
-				l.cgroup.Cleanup()
-			}
-			return fmt.Errorf("failed to start command: %w", err)
+		if l.cgroup != nil {
+			l.cgroup.Cleanup()
 		}
-		slog.Warn("PID namespace unavailable, job descendants may survive if teleworker dies")
+		return fmt.Errorf("failed to start command: %w", err)
 	}
 
 	l.cmd = cmd
