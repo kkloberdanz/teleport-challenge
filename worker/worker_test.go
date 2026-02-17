@@ -362,19 +362,11 @@ func TestConcurrentStartQueryStop(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Every job must have reached a terminal state.
+	// Wait for every job to reach a terminal state. Polling ensures the
+	// Wait() goroutine has finished (including cgroup cleanup) before
+	// t.Cleanup removes the parent cgroup directory.
 	for _, id := range jobIDs {
-		result, err := w.GetJobStatus(id)
-		if err != nil {
-			t.Errorf("GetJobStatus(%s) failed: %v", id, err)
-			continue
-		}
-		switch result.Status {
-		case job.StatusKilled, job.StatusSuccess, job.StatusFailed:
-			// OK.
-		default:
-			t.Errorf("job %s in unexpected state: %v", id, result.Status)
-		}
+		waitForNonRunning(t, w, id)
 	}
 }
 
