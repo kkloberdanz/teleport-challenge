@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/kkloberdanz/teleworker/job"
 	pb "github.com/kkloberdanz/teleworker/proto/teleworker/v1"
 )
 
@@ -55,4 +56,44 @@ func (c *Client) StartJob(ctx context.Context, command string, args []string) (s
 	}
 
 	return resp.GetJobId(), nil
+}
+
+// GetJobStatus returns the job's status and optional exit code.
+func (c *Client) GetJobStatus(ctx context.Context, jobID string) (job.Status, *int32, error) {
+	resp, err := c.client.GetJobStatus(ctx, &pb.GetJobStatusRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		return job.StatusUnspecified, nil, fmt.Errorf("failed to get job status: %w", err)
+	}
+
+	return mapStatus(resp.GetStatus()), resp.ExitCode, nil
+}
+
+func mapStatus(s pb.JobStatus) job.Status {
+	switch s {
+	case pb.JobStatus_JOB_STATUS_SUBMITTED:
+		return job.StatusSubmitted
+	case pb.JobStatus_JOB_STATUS_RUNNING:
+		return job.StatusRunning
+	case pb.JobStatus_JOB_STATUS_SUCCESS:
+		return job.StatusSuccess
+	case pb.JobStatus_JOB_STATUS_FAILED:
+		return job.StatusFailed
+	case pb.JobStatus_JOB_STATUS_KILLED:
+		return job.StatusKilled
+	default:
+		return job.StatusUnspecified
+	}
+}
+
+// StopJob stops a running job.
+func (c *Client) StopJob(ctx context.Context, jobID string) error {
+	_, err := c.client.StopJob(ctx, &pb.StopJobRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to stop job: %w", err)
+	}
+	return nil
 }
