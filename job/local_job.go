@@ -73,6 +73,9 @@ func (l *localJob) Start() error {
 		}
 		return fmt.Errorf("failed to start command: %w", err)
 	}
+	if l.cgroup != nil {
+		l.cgroup.CloseFD()
+	}
 
 	l.cmd = cmd
 	l.status = StatusRunning

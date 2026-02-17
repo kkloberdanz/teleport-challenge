@@ -138,16 +138,27 @@ func (c *Cgroup) FD() int {
 	return c.fd
 }
 
+// CloseFD closes the directory file descriptor. This should be called once the
+// process has started and the fd is no longer needed. The fd is set to -1 when
+// called, and that value is checked before calling close, meaning it is safe
+// to call this method multiple times.
+func (c *Cgroup) CloseFD() error {
+	if c.fd == -1 {
+		return nil
+	}
+	err := unix.Close(c.fd)
+	c.fd = -1
+	return err
+}
+
 // Kill writes "1" to cgroup.kill, terminating all processes in this cgroup.
 func (c *Cgroup) Kill() error {
 	return os.WriteFile(filepath.Join(c.path, "cgroup.kill"), []byte("1"), 0644)
 }
 
-// Cleanup closes the directory fd and removes the cgroup directory.
+// Cleanup closes the directory fd if still open and removes the cgroup directory.
 func (c *Cgroup) Cleanup() error {
-	if err := unix.Close(c.fd); err != nil {
-		return fmt.Errorf("failed to close cgroup fd: %w", err)
-	}
+	c.CloseFD()
 	return os.Remove(c.path)
 }
 
