@@ -90,6 +90,9 @@ func (c *Client) StreamOutput(ctx context.Context, jobID string, w io.Writer) er
 	if err != nil {
 		return fmt.Errorf("failed to open output stream: %w", err)
 	}
+	if err := stream.CloseSend(); err != nil {
+		return fmt.Errorf("failed to close send: %w", err)
+	}
 	for {
 		resp, err := stream.Recv()
 		if err == io.EOF {

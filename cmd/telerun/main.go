@@ -2,11 +2,14 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -26,10 +29,14 @@ var (
 func main() {
 	logging.Init()
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	rootCmd := &cobra.Command{
 		Use:   "telerun",
 		Short: "Run commands via telerun",
 	}
+	rootCmd.SetContext(ctx)
 
 	rootCmd.PersistentFlags().StringVar(&address, "addr", "127.0.0.1:50051", "Server address")
 	rootCmd.PersistentFlags().StringVar(&caPath, "ca", "certs/ca.crt", "Path to CA certificate PEM")
