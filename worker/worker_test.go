@@ -3,6 +3,7 @@ package worker_test
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +16,9 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/goleak"
 
+	"github.com/kkloberdanz/teleworker/auth"
 	"github.com/kkloberdanz/teleworker/job"
+	"github.com/kkloberdanz/teleworker/output"
 	"github.com/kkloberdanz/teleworker/testutil"
 	"github.com/kkloberdanz/teleworker/worker"
 )
@@ -39,7 +42,7 @@ func newTestWorker(t *testing.T) *worker.Worker {
 func TestStartJobReturnsUUID(t *testing.T) {
 	w := newTestWorker(t)
 
-	jobID, err := w.StartJob(job.JobTypeLocal, "echo", []string{"hello"})
+	jobID, err := w.StartJob(job.JobTypeLocal, "echo", []string{"hello"}, auth.Identity{Username: "testuser"})
 	if err != nil {
 		t.Fatalf("StartJob failed: %v", err)
 	}
@@ -54,7 +57,7 @@ func TestStartJobReturnsUUID(t *testing.T) {
 func TestStartJobBadCommand(t *testing.T) {
 	w := newTestWorker(t)
 
-	_, err := w.StartJob(job.JobTypeLocal, "nonexistent-command-that-does-not-exist", nil)
+	_, err := w.StartJob(job.JobTypeLocal, "nonexistent-command-that-does-not-exist", nil, auth.Identity{Username: "testuser"})
 	if err == nil {
 		t.Fatal("expected error for bad command, got nil")
 	}
@@ -63,7 +66,7 @@ func TestStartJobBadCommand(t *testing.T) {
 func TestJobRunsToSuccess(t *testing.T) {
 	w := newTestWorker(t)
 
-	jobID, err := w.StartJob(job.JobTypeLocal, "true", nil)
+	jobID, err := w.StartJob(job.JobTypeLocal, "true", nil, auth.Identity{Username: "testuser"})
 	if err != nil {
 		t.Fatalf("StartJob failed: %v", err)
 	}
@@ -85,7 +88,7 @@ func TestJobRunsToSuccess(t *testing.T) {
 func TestJobRunsToFailed(t *testing.T) {
 	w := newTestWorker(t)
 
-	jobID, err := w.StartJob(job.JobTypeLocal, "false", nil)
+	jobID, err := w.StartJob(job.JobTypeLocal, "false", nil, auth.Identity{Username: "testuser"})
 	if err != nil {
 		t.Fatalf("StartJob failed: %v", err)
 	}
@@ -107,7 +110,7 @@ func TestJobRunsToFailed(t *testing.T) {
 func TestStopRunningJob(t *testing.T) {
 	w := newTestWorker(t)
 
-	jobID, err := w.StartJob(job.JobTypeLocal, "sleep", []string{"60"})
+	jobID, err := w.StartJob(job.JobTypeLocal, "sleep", []string{"60"}, auth.Identity{Username: "testuser"})
 	if err != nil {
 		t.Fatalf("StartJob failed: %v", err)
 	}
@@ -137,10 +140,149 @@ func TestStopRunningJob(t *testing.T) {
 	}
 }
 
+func TestStreamOutput(t *testing.T) {
+	w := newTestWorker(t)
+
+	jobID, err := w.StartJob(job.JobTypeLocal, "echo", []string{"stream-test"}, auth.Identity{Username: "testuser"})
+	if err != nil {
+		t.Fatalf("StartJob failed: %v", err)
+	}
+
+	sub, err := w.StreamOutput(jobID)
+	if err != nil {
+		t.Fatalf("StreamOutput failed: %v", err)
+	}
+
+	// Read all output until EOF.
+	var got []byte
+	buf := make([]byte, 4096)
+	for {
+		n, err := sub.Read(t.Context(), buf)
+		if n > 0 {
+			got = append(got, buf[:n]...)
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if !strings.Contains(string(got), "stream-test") {
+		t.Fatalf("expected output to contain %q, got %q", "stream-test", string(got))
+	}
+}
+
+// TestConcurrentStreamSubscribers verifies that multiple goroutines can
+// subscribe to and read a job's output simultaneously without races, and that
+// every subscriber sees the complete output. Run with -race.
+func TestConcurrentStreamSubscribers(t *testing.T) {
+	w := newTestWorker(t)
+
+	const numSubscribers = 10
+	const numLines = 20
+
+	// Build the expected output: "line 0\nline 1\n...line 19\n".
+	var want strings.Builder
+	for i := range numLines {
+		fmt.Fprintf(&want, "line %d\n", i)
+	}
+
+	// Use a script that prints lines with a small delay so subscribers
+	// are reading while the job is still producing output.
+	var script strings.Builder
+	for i := range numLines {
+		fmt.Fprintf(&script, "echo 'line %d'; ", i)
+	}
+
+	jobID, err := w.StartJob(job.JobTypeLocal, "sh", []string{"-c", script.String()}, auth.Identity{Username: "testuser"})
+	if err != nil {
+		t.Fatalf("StartJob failed: %v", err)
+	}
+
+	// Create all subscribers before any reading begins.
+	subs := make([]output.Subscriber, numSubscribers)
+	for i := range subs {
+		sub, err := w.StreamOutput(jobID)
+		if err != nil {
+			t.Fatalf("StreamOutput[%d] failed: %v", i, err)
+		}
+		subs[i] = sub
+	}
+
+	// Read from all subscribers concurrently.
+	var wg sync.WaitGroup
+	results := make([]string, numSubscribers)
+	for i := range subs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var all []byte
+			buf := make([]byte, 256)
+			for {
+				n, err := subs[i].Read(t.Context(), buf)
+				if n > 0 {
+					all = append(all, buf[:n]...)
+				}
+				if err != nil {
+					break
+				}
+			}
+			results[i] = string(all)
+		}()
+	}
+	wg.Wait()
+
+	for i, got := range results {
+		if got != want.String() {
+			t.Errorf("subscriber %d: got %d bytes, want %d bytes\ngot:  %q\nwant: %q",
+				i, len(got), want.Len(), got, want.String())
+		}
+	}
+}
+
+func TestShutdownClosesOutputStreams(t *testing.T) {
+	w := newTestWorker(t)
+
+	jobID, err := w.StartJob(job.JobTypeLocal, "sleep", []string{"60"}, auth.Identity{Username: "testuser"})
+	if err != nil {
+		t.Fatalf("StartJob failed: %v", err)
+	}
+
+	sub, err := w.StreamOutput(jobID)
+	if err != nil {
+		t.Fatalf("StreamOutput failed: %v", err)
+	}
+
+	// Start reading in a goroutine. It will block because sleep produces
+	// no output.
+	readDone := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			_, err := sub.Read(t.Context(), buf)
+			if err != nil {
+				readDone <- err
+				return
+			}
+		}
+	}()
+
+	// Shutdown should close the output buffer, unblocking the subscriber.
+	w.Shutdown()
+
+	err = <-readDone
+	if err != io.EOF {
+		t.Fatalf("expected io.EOF after Shutdown, got %v", err)
+	}
+
+	// Clean up the sleep process so the Wait goroutine can exit.
+	w.StopJob(jobID)
+	waitForNonRunning(t, w, jobID)
+}
+
 func TestStopFinishedJob(t *testing.T) {
 	w := newTestWorker(t)
 
-	jobID, err := w.StartJob(job.JobTypeLocal, "true", nil)
+	jobID, err := w.StartJob(job.JobTypeLocal, "true", nil, auth.Identity{Username: "testuser"})
 	if err != nil {
 		t.Fatalf("StartJob failed: %v", err)
 	}
@@ -153,6 +295,37 @@ func TestStopFinishedJob(t *testing.T) {
 	}
 	if !errors.Is(err, job.ErrJobNotRunning) {
 		t.Fatalf("expected ErrJobNotRunning, got %v", err)
+	}
+}
+
+func TestGetJobOwner(t *testing.T) {
+	w := newTestWorker(t)
+
+	jobID, err := w.StartJob(job.JobTypeLocal, "true", nil, auth.Identity{Username: "alice"})
+	if err != nil {
+		t.Fatalf("StartJob failed: %v", err)
+	}
+
+	owner, err := w.GetJobOwner(jobID)
+	if err != nil {
+		t.Fatalf("GetJobOwner failed: %v", err)
+	}
+	if owner.Username != "alice" {
+		t.Fatalf("expected owner %q, got %q", "alice", owner.Username)
+	}
+
+	waitForStatus(t, w, jobID, job.StatusSuccess)
+}
+
+func TestGetJobOwnerNotFound(t *testing.T) {
+	w := newTestWorker(t)
+
+	_, err := w.GetJobOwner("nonexistent-job-id")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, worker.ErrJobNotFound) {
+		t.Fatalf("expected ErrJobNotFound, got %v", err)
 	}
 }
 
@@ -186,7 +359,7 @@ func TestStopJobKillsChildProcesses(t *testing.T) {
 		tmpDir, tmpDir,
 	)
 
-	jobID, err := w.StartJob(job.JobTypeLocal, "sh", []string{"-c", script})
+	jobID, err := w.StartJob(job.JobTypeLocal, "sh", []string{"-c", script}, auth.Identity{Username: "testuser"})
 	if err != nil {
 		t.Fatalf("StartJob failed: %v", err)
 	}
@@ -236,7 +409,7 @@ func TestCgroupOOMKillsJob(t *testing.T) {
 	// The cgroup OOM killer should terminate the process.
 	jobID, err := w.StartJob(job.JobTypeLocal, "python3", []string{
 		"-c", "x = bytearray(600_000_000); import time; time.sleep(60)",
-	})
+	}, auth.Identity{Username: "testuser"})
 	if err != nil {
 		t.Fatalf("StartJob failed: %v", err)
 	}
@@ -298,7 +471,7 @@ func waitForNonRunning(t *testing.T, w *worker.Worker, jobID string) {
 	})
 }
 
-// waitForFiles polls until n files with the given prefix (prefix1 … prefixN)
+// waitForFiles polls until n files with the given prefix (prefix1 ... prefixN)
 // appear in dir.
 func waitForFiles(t *testing.T, dir, prefix string, n int) {
 	t.Helper()
@@ -327,7 +500,7 @@ func TestConcurrentStartQueryStop(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			id, err := w.StartJob(job.JobTypeLocal, "sleep", []string{"60"})
+			id, err := w.StartJob(job.JobTypeLocal, "sleep", []string{"60"}, auth.Identity{Username: "testuser"})
 			if err != nil {
 				t.Errorf("StartJob failed: %v", err)
 				return

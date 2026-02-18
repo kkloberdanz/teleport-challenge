@@ -4,11 +4,14 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/kkloberdanz/teleworker/auth"
 	"github.com/kkloberdanz/teleworker/job"
 	pb "github.com/kkloberdanz/teleworker/proto/teleworker/v1"
 	"github.com/kkloberdanz/teleworker/worker"
@@ -25,8 +28,40 @@ func New(w *worker.Worker) *Server {
 	return &Server{worker: w}
 }
 
+// authorize extracts the caller's identity and checks that they are allowed to
+// access the given job. Admins may access any job; regular users may only access
+// their own jobs.
+func (s *Server) authorize(ctx context.Context, jobID string) (auth.Identity, error) {
+	id, err := auth.IdentityFromContext(ctx)
+	if err != nil {
+		return auth.Identity{}, err
+	}
+
+	if id.IsAdmin() {
+		return id, nil
+	}
+
+	owner, err := s.worker.GetJobOwner(jobID)
+	if err != nil {
+		if errors.Is(err, worker.ErrJobNotFound) {
+			return auth.Identity{}, status.Error(codes.NotFound, "job not found")
+		}
+		return auth.Identity{}, status.Errorf(codes.Internal, "failed to check job owner: %v", err)
+	}
+
+	if owner.Username != id.Username {
+		return auth.Identity{}, status.Error(codes.PermissionDenied, "access denied")
+	}
+	return id, nil
+}
+
 // StartJob starts a new job and returns its ID.
 func (s *Server) StartJob(ctx context.Context, req *pb.StartJobRequest) (*pb.StartJobResponse, error) {
+	id, err := auth.IdentityFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	if req.GetCommand() == "" {
 		return nil, status.Error(codes.InvalidArgument, "command must not be empty")
 	}
@@ -34,7 +69,7 @@ func (s *Server) StartJob(ctx context.Context, req *pb.StartJobRequest) (*pb.Sta
 	// TODO: We can support other job types, such as Docker by extending the
 	// protobuf to include which job type we want to launch. Currently, we will
 	// hard-code JobTypeLocal for simplicity.
-	jobID, err := s.worker.StartJob(job.JobTypeLocal, req.GetCommand(), req.GetArgs())
+	jobID, err := s.worker.StartJob(job.JobTypeLocal, req.GetCommand(), req.GetArgs(), id)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to start job: %v", err)
 	}
@@ -44,6 +79,7 @@ func (s *Server) StartJob(ctx context.Context, req *pb.StartJobRequest) (*pb.Sta
 		"jobID", jobID,
 		"command", req.GetCommand(),
 		"args", req.GetArgs(),
+		"user", id.Username,
 	)
 
 	return &pb.StartJobResponse{
@@ -53,6 +89,10 @@ func (s *Server) StartJob(ctx context.Context, req *pb.StartJobRequest) (*pb.Sta
 
 // GetJobStatus returns the current status and exit code for a job.
 func (s *Server) GetJobStatus(ctx context.Context, req *pb.GetJobStatusRequest) (*pb.GetJobStatusResponse, error) {
+	if _, err := s.authorize(ctx, req.GetJobId()); err != nil {
+		return nil, err
+	}
+
 	result, err := s.worker.GetJobStatus(req.GetJobId())
 	if err != nil {
 		if errors.Is(err, worker.ErrJobNotFound) {
@@ -76,6 +116,10 @@ func (s *Server) GetJobStatus(ctx context.Context, req *pb.GetJobStatusRequest) 
 
 // StopJob terminates a running job.
 func (s *Server) StopJob(ctx context.Context, req *pb.StopJobRequest) (*pb.StopJobResponse, error) {
+	if _, err := s.authorize(ctx, req.GetJobId()); err != nil {
+		return nil, err
+	}
+
 	err := s.worker.StopJob(req.GetJobId())
 	if err != nil {
 		if errors.Is(err, worker.ErrJobNotFound) {
@@ -88,6 +132,42 @@ func (s *Server) StopJob(ctx context.Context, req *pb.StopJobRequest) (*pb.StopJ
 	}
 
 	return &pb.StopJobResponse{}, nil
+}
+
+// StreamOutput streams the combined stdout/stderr of a job to the client.
+func (s *Server) StreamOutput(req *pb.StreamOutputRequest, stream grpc.ServerStreamingServer[pb.StreamOutputResponse]) error {
+	if _, err := s.authorize(stream.Context(), req.GetJobId()); err != nil {
+		return err
+	}
+
+	sub, err := s.worker.StreamOutput(req.GetJobId())
+	if err != nil {
+		if errors.Is(err, worker.ErrJobNotFound) {
+			return status.Error(codes.NotFound, "job not found")
+		}
+		return status.Errorf(codes.Internal, "failed to stream output: %v", err)
+	}
+
+	buf := make([]byte, 4096) // For simplicity, hard code buffer size.
+	for {
+		n, err := sub.Read(stream.Context(), buf)
+		if n > 0 {
+			if sendErr := stream.Send(&pb.StreamOutputResponse{Data: buf[:n]}); sendErr != nil {
+				return sendErr
+			}
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			// If the client disconnected, return a proper gRPC
+			// status rather than leaking the raw context error.
+			if ctx := stream.Context(); ctx.Err() != nil {
+				return status.Error(codes.Canceled, "client disconnected")
+			}
+			return err
+		}
+	}
 }
 
 func mapJobStatus(s job.Status) pb.JobStatus {

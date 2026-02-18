@@ -2,6 +2,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net"
@@ -11,7 +12,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
+	"github.com/kkloberdanz/teleworker/auth"
 	"github.com/kkloberdanz/teleworker/logging"
 	pb "github.com/kkloberdanz/teleworker/proto/teleworker/v1"
 	"github.com/kkloberdanz/teleworker/resources"
@@ -19,7 +22,12 @@ import (
 	"github.com/kkloberdanz/teleworker/worker"
 )
 
-var address string
+var (
+	address  string
+	caPath   string
+	certPath string
+	keyPath  string
+)
 
 func main() {
 	logging.Init()
@@ -31,6 +39,9 @@ func main() {
 	}
 
 	rootCmd.PersistentFlags().StringVar(&address, "addr", ":50051", "Server address")
+	rootCmd.PersistentFlags().StringVar(&caPath, "ca", "certs/ca.crt", "Path to CA certificate PEM")
+	rootCmd.PersistentFlags().StringVar(&certPath, "cert", "certs/server.crt", "Path to server certificate PEM")
+	rootCmd.PersistentFlags().StringVar(&keyPath, "key", "certs/server.key", "Path to server private key PEM")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -51,7 +62,12 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 
-	grpcServer := grpc.NewServer()
+	tlsConf, err := loadServerTLS()
+	if err != nil {
+		return err
+	}
+
+	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConf)))
 	pb.RegisterTeleWorkerServer(grpcServer, srv)
 
 	// Handle shutdown on SIGINT/SIGTERM.
@@ -63,6 +79,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 			"received signal, shutting down",
 			"signal", sig,
 		)
+		w.Shutdown()
 		grpcServer.GracefulStop()
 	}()
 
@@ -76,4 +93,22 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	slog.Info("server finished")
 	return nil
+}
+
+func loadServerTLS() (*tls.Config, error) {
+	caCert, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA certificate: %w", err)
+	}
+
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load server certificate: %w", err)
+	}
+
+	tlsConf, err := auth.ServerTLSConfig(caCert, cert)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build TLS config: %w", err)
+	}
+	return tlsConf, nil
 }

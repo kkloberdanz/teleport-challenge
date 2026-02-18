@@ -2,6 +2,10 @@
 
 This is my implementation of the Teleport interview challenge.
 
+Note that this project requires [cgroups](https://en.wikipedia.org/wiki/Cgroups).
+Therefore, it will only work on Linux, and must be run as root. Even tests
+require root so that we can use cgroups.
+
 ## Build
 
 ### Dependencies
@@ -71,6 +75,20 @@ job gets killed. This test is skipped if `python3` is not found in the path.
 
 ## Usage
 
+Both `teleworker` and `telerun` require mTLS certificates. Generate them with:
+
+```sh
+make certs
+```
+
+By default, `telerun` uses the `alice` identity (`certs/alice.crt` and
+`certs/alice.key`). Use the `--cert` and `--key` flags to connect as a
+different user:
+
+```sh
+./bin/telerun --cert certs/bob.crt --key certs/bob.key start -- echo hello
+```
+
 Start the server. Notice, to use `cgroups`, you must run the server as root.
 The server will also start as a non-root user, but it not use `cgroups`.
 
@@ -88,6 +106,12 @@ Get the status of a job:
 
 ```sh
 ./bin/telerun status <job_id>
+```
+
+Stream the output of a job:
+
+```sh
+./bin/telerun logs <job_id>
 ```
 
 Stop a running job:

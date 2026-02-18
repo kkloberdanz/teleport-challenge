@@ -1,6 +1,14 @@
 package job
 
-import "testing"
+import (
+	"testing"
+
+	"go.uber.org/goleak"
+)
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestNewJobLocal(t *testing.T) {
 	j, err := NewJob(JobTypeLocal, "test-id", "echo", []string{"hello"}, Options{})
