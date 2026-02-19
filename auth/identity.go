@@ -38,9 +38,12 @@ func IdentityFromContext(ctx context.Context) (Identity, error) {
 	}
 
 	cert := tlsInfo.State.VerifiedChains[0][0]
-	var role string
-	if len(cert.Subject.OrganizationalUnit) > 0 {
-		role = cert.Subject.OrganizationalUnit[0]
+	if len(cert.Subject.OrganizationalUnit) == 0 {
+		return Identity{}, status.Error(codes.PermissionDenied, "certificate has no organizational unit")
+	}
+	role := cert.Subject.OrganizationalUnit[0]
+	if role != "admin" && role != "client" {
+		return Identity{}, status.Errorf(codes.PermissionDenied, "unrecognized role %q", role)
 	}
 
 	return Identity{

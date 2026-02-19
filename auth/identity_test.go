@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"os"
 	"testing"
@@ -81,6 +82,51 @@ func TestIdentityFromContextEmptyChains(t *testing.T) {
 	_, err := auth.IdentityFromContext(ctx)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
+		t.Fatalf("expected PermissionDenied, got %v", err)
+	}
+}
+
+func TestIdentityFromContextEmptyOU(t *testing.T) {
+	cert := &x509.Certificate{
+		Subject: pkix.Name{
+			CommonName: "alice",
+		},
+	}
+	tlsInfo := credentials.TLSInfo{
+		State: tls.ConnectionState{
+			VerifiedChains: [][]*x509.Certificate{{cert}},
+		},
+	}
+	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: tlsInfo})
+
+	_, err := auth.IdentityFromContext(ctx)
+	if err == nil {
+		t.Fatal("expected error for empty OU, got nil")
+	}
+	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
+		t.Fatalf("expected PermissionDenied, got %v", err)
+	}
+}
+
+func TestIdentityFromContextUnrecognizedRole(t *testing.T) {
+	cert := &x509.Certificate{
+		Subject: pkix.Name{
+			CommonName:         "alice",
+			OrganizationalUnit: []string{"superuser"},
+		},
+	}
+	tlsInfo := credentials.TLSInfo{
+		State: tls.ConnectionState{
+			VerifiedChains: [][]*x509.Certificate{{cert}},
+		},
+	}
+	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: tlsInfo})
+
+	_, err := auth.IdentityFromContext(ctx)
+	if err == nil {
+		t.Fatal("expected error for unrecognized role, got nil")
 	}
 	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", err)
