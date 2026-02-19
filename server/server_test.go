@@ -373,8 +373,8 @@ func TestNonOwnerCannotGetStatus(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
+	if s, ok := status.FromError(err); !ok || s.Code() != codes.NotFound {
+		t.Fatalf("expected NotFound, got %v", err)
 	}
 }
 
@@ -399,8 +399,8 @@ func TestNonOwnerCannotStopJob(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
+	if s, ok := status.FromError(err); !ok || s.Code() != codes.NotFound {
+		t.Fatalf("expected NotFound, got %v", err)
 	}
 }
 
@@ -430,8 +430,8 @@ func TestNonOwnerCannotStreamOutput(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
+	if s, ok := status.FromError(err); !ok || s.Code() != codes.NotFound {
+		t.Fatalf("expected NotFound, got %v", err)
 	}
 }
 
