@@ -50,7 +50,13 @@ func (s *Server) authorize(ctx context.Context, jobID string) (auth.Identity, er
 	}
 
 	if owner.Username != id.Username {
-		return auth.Identity{}, status.Error(codes.PermissionDenied, "access denied")
+		// We return a NotFound here because if we returned PermissionDenied,
+		// this could leak which job IDs are valid and owned by another user.
+		// Job IDs currently are UUIDs, which are 128 bits. It would be
+		// impractical to brute force a 128 bit key (although only 122 bits are
+		// random), however, this is a defense in depth. Suppose if the key type
+		// changes from a UUID to something with fewer bits of entropy?
+		return auth.Identity{}, status.Error(codes.NotFound, "job not found")
 	}
 	return id, nil
 }
