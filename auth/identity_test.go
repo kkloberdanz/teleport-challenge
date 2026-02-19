@@ -22,73 +22,93 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-func TestIdentityFromContext(t *testing.T) {
+func TestUnaryInterceptor(t *testing.T) {
 	ctx := peerContextFromFile(t, "../certs/alice.crt")
 
-	id, err := auth.IdentityFromContext(ctx)
+	handler := func(ctx context.Context, req any) (any, error) {
+		id, err := auth.FromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if id.Username != "alice" {
+			t.Errorf("expected username %q, got %q", "alice", id.Username)
+		}
+		if id.Role != "client" {
+			t.Errorf("expected role %q, got %q", "client", id.Role)
+		}
+		return nil, nil
+	}
+
+	_, err := auth.UnaryInterceptor(ctx, nil, nil, handler)
 	if err != nil {
-		t.Fatalf("failed to load identity: %v", err)
-	}
-	if id.Username != "alice" {
-		t.Fatalf("expected username %q, got %q", "alice", id.Username)
-	}
-	if id.Role != "client" {
-		t.Fatalf("expected role %q, got %q", "client", id.Role)
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestIdentityFromContextAdmin(t *testing.T) {
+func TestUnaryInterceptorAdmin(t *testing.T) {
 	ctx := peerContextFromFile(t, "../certs/admin.crt")
 
-	id, err := auth.IdentityFromContext(ctx)
+	handler := func(ctx context.Context, req any) (any, error) {
+		id, err := auth.FromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !id.IsAdmin() {
+			t.Error("expected admin, got non-admin")
+		}
+		return nil, nil
+	}
+
+	_, err := auth.UnaryInterceptor(ctx, nil, nil, handler)
 	if err != nil {
-		t.Fatalf("failed to load identity: %v", err)
-	}
-	if !id.IsAdmin() {
-		t.Fatal("expected admin, got non-admin")
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestIdentityFromContextNoPeer(t *testing.T) {
-	_, err := auth.IdentityFromContext(t.Context())
-	if err == nil {
-		t.Fatal("expected error, got nil")
+func TestUnaryInterceptorNoPeer(t *testing.T) {
+	handler := func(ctx context.Context, req any) (any, error) {
+		t.Fatal("handler should not be called")
+		return nil, nil
 	}
+
+	_, err := auth.UnaryInterceptor(t.Context(), nil, nil, handler)
 	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", err)
 	}
 }
 
-func TestIdentityFromContextNoTLS(t *testing.T) {
-	// Peer with nil AuthInfo (not TLS).
+func TestUnaryInterceptorNoTLS(t *testing.T) {
 	ctx := peer.NewContext(t.Context(), &peer.Peer{})
-	_, err := auth.IdentityFromContext(ctx)
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	handler := func(ctx context.Context, req any) (any, error) {
+		t.Fatal("handler should not be called")
+		return nil, nil
 	}
+
+	_, err := auth.UnaryInterceptor(ctx, nil, nil, handler)
 	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", err)
 	}
 }
 
-func TestIdentityFromContextEmptyChains(t *testing.T) {
+func TestUnaryInterceptorEmptyChains(t *testing.T) {
 	tlsInfo := credentials.TLSInfo{
 		State: tls.ConnectionState{
 			VerifiedChains: nil,
 		},
 	}
 	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: tlsInfo})
-
-	_, err := auth.IdentityFromContext(ctx)
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	handler := func(ctx context.Context, req any) (any, error) {
+		t.Fatal("handler should not be called")
+		return nil, nil
 	}
+
+	_, err := auth.UnaryInterceptor(ctx, nil, nil, handler)
 	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", err)
 	}
 }
 
-func TestIdentityFromContextEmptyOU(t *testing.T) {
+func TestUnaryInterceptorEmptyOU(t *testing.T) {
 	cert := &x509.Certificate{
 		Subject: pkix.Name{
 			CommonName: "alice",
@@ -100,17 +120,18 @@ func TestIdentityFromContextEmptyOU(t *testing.T) {
 		},
 	}
 	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: tlsInfo})
-
-	_, err := auth.IdentityFromContext(ctx)
-	if err == nil {
-		t.Fatal("expected error for empty OU, got nil")
+	handler := func(ctx context.Context, req any) (any, error) {
+		t.Fatal("handler should not be called")
+		return nil, nil
 	}
+
+	_, err := auth.UnaryInterceptor(ctx, nil, nil, handler)
 	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", err)
 	}
 }
 
-func TestIdentityFromContextUnrecognizedRole(t *testing.T) {
+func TestUnaryInterceptorUnrecognizedRole(t *testing.T) {
 	cert := &x509.Certificate{
 		Subject: pkix.Name{
 			CommonName:         "alice",
@@ -123,11 +144,12 @@ func TestIdentityFromContextUnrecognizedRole(t *testing.T) {
 		},
 	}
 	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: tlsInfo})
-
-	_, err := auth.IdentityFromContext(ctx)
-	if err == nil {
-		t.Fatal("expected error for unrecognized role, got nil")
+	handler := func(ctx context.Context, req any) (any, error) {
+		t.Fatal("handler should not be called")
+		return nil, nil
 	}
+
+	_, err := auth.UnaryInterceptor(ctx, nil, nil, handler)
 	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", err)
 	}

@@ -29,11 +29,11 @@ func New(w *worker.Worker) *Server {
 	return &Server{worker: w}
 }
 
-// authorize extracts the caller's identity and checks that they are allowed to
-// access the given job. Admins may access any job; regular users may only access
-// their own jobs.
+// authorize checks that the caller is allowed to access the given job. Admins
+// may access any job. Regular users may only access their own jobs.
+// The caller's identity must already be in the context (set by the auth interceptor).
 func (s *Server) authorize(ctx context.Context, jobID string) (auth.Identity, error) {
-	id, err := auth.IdentityFromContext(ctx)
+	id, err := auth.FromContext(ctx)
 	if err != nil {
 		return auth.Identity{}, err
 	}
@@ -64,7 +64,7 @@ func (s *Server) authorize(ctx context.Context, jobID string) (auth.Identity, er
 
 // StartJob starts a new job and returns its ID.
 func (s *Server) StartJob(ctx context.Context, req *pb.StartJobRequest) (*pb.StartJobResponse, error) {
-	id, err := auth.IdentityFromContext(ctx)
+	id, err := auth.FromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

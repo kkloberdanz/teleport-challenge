@@ -67,7 +67,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConf)))
+	grpcServer := grpc.NewServer(
+		grpc.Creds(credentials.NewTLS(tlsConf)),
+		grpc.UnaryInterceptor(auth.UnaryInterceptor),
+		grpc.StreamInterceptor(auth.StreamInterceptor),
+	)
 	pb.RegisterTeleWorkerServer(grpcServer, srv)
 
 	// Handle shutdown on SIGINT/SIGTERM.

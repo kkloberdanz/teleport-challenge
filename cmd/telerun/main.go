@@ -12,6 +12,8 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/kkloberdanz/teleworker/auth"
 	"github.com/kkloberdanz/teleworker/client"
@@ -162,7 +164,12 @@ func cmdLogs(cmd *cobra.Command, args []string) error {
 	}
 	defer teleClient.Close()
 
-	return teleClient.StreamOutput(cmd.Context(), args[0], os.Stdout)
+	err = teleClient.StreamOutput(cmd.Context(), args[0], os.Stdout)
+	if status.Code(err) == codes.Canceled {
+		// If the user cancel's with Ctrl-C, then don't return an error.
+		return nil
+	}
+	return err
 }
 
 func cmdStop(cmd *cobra.Command, args []string) error {

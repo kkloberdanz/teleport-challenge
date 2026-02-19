@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
+	"github.com/kkloberdanz/teleworker/auth"
 	pb "github.com/kkloberdanz/teleworker/proto/teleworker/v1"
 	"github.com/kkloberdanz/teleworker/server"
 	"github.com/kkloberdanz/teleworker/testutil"
@@ -43,7 +44,11 @@ func newTestEnv(t *testing.T) *testEnv {
 	w := worker.New(worker.Options{CgroupMgr: mgr})
 	srv := server.New(w)
 
-	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(testutil.ServerTLSConfig(t))))
+	grpcServer := grpc.NewServer(
+		grpc.Creds(credentials.NewTLS(testutil.ServerTLSConfig(t))),
+		grpc.UnaryInterceptor(auth.UnaryInterceptor),
+		grpc.StreamInterceptor(auth.StreamInterceptor),
+	)
 	pb.RegisterTeleWorkerServer(grpcServer, srv)
 
 	go func() {
