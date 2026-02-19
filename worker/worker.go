@@ -131,7 +131,6 @@ func (w *Worker) Shutdown() {
 
 	for _, j := range w.jobs {
 		j.Stop()
-		j.Output().Close()
 	}
 }
 
