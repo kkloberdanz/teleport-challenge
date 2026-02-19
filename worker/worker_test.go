@@ -18,7 +18,6 @@ import (
 
 	"github.com/kkloberdanz/teleworker/auth"
 	"github.com/kkloberdanz/teleworker/job"
-	"github.com/kkloberdanz/teleworker/output"
 	"github.com/kkloberdanz/teleworker/testutil"
 	"github.com/kkloberdanz/teleworker/worker"
 )
@@ -157,7 +156,7 @@ func TestStreamOutput(t *testing.T) {
 	var got []byte
 	buf := make([]byte, 4096)
 	for {
-		n, err := sub.Read(t.Context(), buf)
+		n, err := sub.Read(buf)
 		if n > 0 {
 			got = append(got, buf[:n]...)
 		}
@@ -199,7 +198,7 @@ func TestConcurrentStreamSubscribers(t *testing.T) {
 	}
 
 	// Create all subscribers before any reading begins.
-	subs := make([]output.Subscriber, numSubscribers)
+	subs := make([]io.ReadCloser, numSubscribers)
 	for i := range subs {
 		sub, err := w.StreamOutput(jobID)
 		if err != nil {
@@ -218,7 +217,7 @@ func TestConcurrentStreamSubscribers(t *testing.T) {
 			var all []byte
 			buf := make([]byte, 256)
 			for {
-				n, err := subs[i].Read(t.Context(), buf)
+				n, err := subs[i].Read(buf)
 				if n > 0 {
 					all = append(all, buf[:n]...)
 				}
@@ -258,7 +257,7 @@ func TestShutdownClosesOutputStreams(t *testing.T) {
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			_, err := sub.Read(t.Context(), buf)
+			_, err := sub.Read(buf)
 			if err != nil {
 				readDone <- err
 				return

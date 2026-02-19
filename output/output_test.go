@@ -1,7 +1,6 @@
 package output_test
 
 import (
-	"context"
 	"io"
 	"sync"
 	"testing"
@@ -25,7 +24,7 @@ func TestWriteAndRead(t *testing.T) {
 
 	sub := buf.Subscribe()
 	got := make([]byte, 64)
-	n, err := sub.Read(t.Context(), got)
+	n, err := sub.Read(got)
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -34,7 +33,7 @@ func TestWriteAndRead(t *testing.T) {
 	}
 
 	// Next read should return EOF.
-	_, err = sub.Read(t.Context(), got)
+	_, err = sub.Read(got)
 	if err != io.EOF {
 		t.Fatalf("expected io.EOF, got %v", err)
 	}
@@ -48,7 +47,7 @@ func TestSubscriberReadsFromBeginning(t *testing.T) {
 
 	sub := buf.Subscribe()
 	got := make([]byte, 64)
-	n, err := sub.Read(t.Context(), got)
+	n, err := sub.Read(got)
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -63,145 +62,21 @@ func TestReadReturnsEOFOnClose(t *testing.T) {
 	buf.Close()
 
 	got := make([]byte, 64)
-	_, err := sub.Read(t.Context(), got)
+	_, err := sub.Read(got)
 	if err != io.EOF {
 		t.Fatalf("expected io.EOF, got %v", err)
 	}
 }
 
-func TestContextCancellation(t *testing.T) {
+func TestSubscriberClose(t *testing.T) {
 	buf := output.NewBuffer()
 	sub := buf.Subscribe()
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
+	sub.Close()
 
 	got := make([]byte, 64)
-	_, err := sub.Read(ctx, got)
-	if err != context.Canceled {
-		t.Fatalf("expected context.Canceled, got %v", err)
-	}
-}
-
-// TestContextCancellationUnblocksWaitingRead verifies that cancelling the
-// context wakes a subscriber that is blocked waiting for data. This exercises
-// the AfterFunc callback that broadcasts on the condition variable while
-// holding the lock, preventing a lost wakeup between the ctx.Err() check
-// and cond.Wait().
-func TestContextCancellationUnblocksWaitingRead(t *testing.T) {
-	buf := output.NewBuffer()
-	sub := buf.Subscribe()
-
-	ctx, cancel := context.WithCancel(t.Context())
-
-	result := make(chan error, 1)
-	go func() {
-		p := make([]byte, 64)
-		_, err := sub.Read(ctx, p)
-		result <- err
-	}()
-
-	cancel()
-
-	err := <-result
-	if err != context.Canceled {
-		t.Fatalf("expected context.Canceled, got %v", err)
-	}
-
-	// The subscriber should still be usable with a fresh context.
-	buf.Write([]byte("after cancel"))
-	buf.Close()
-
-	got := make([]byte, 64)
-	n, err := sub.Read(t.Context(), got)
-	if err != nil {
-		t.Fatalf("Read after cancel failed: %v", err)
-	}
-	if string(got[:n]) != "after cancel" {
-		t.Fatalf("expected %q, got %q", "after cancel", string(got[:n]))
-	}
-}
-
-// TestConcurrentCancelWithWriters verifies that many subscribers can recover
-// from a context cancellation while concurrent writes are happening, and that
-// every subscriber eventually sees the complete output.
-func TestConcurrentCancelWithWriters(t *testing.T) {
-	buf := output.NewBuffer()
-
-	const numSubscribers = 20
-	const numWrites = 50
-	const chunk = "line\n"
-
-	var want string
-	for range numWrites {
-		want += chunk
-	}
-
-	subs := make([]output.Subscriber, numSubscribers)
-	for i := range subs {
-		subs[i] = buf.Subscribe()
-	}
-
-	ctx, cancel := context.WithCancel(t.Context())
-
-	// Ensure all subscribers are blocked in Read before any writes begin.
-	ready := make(chan struct{}, numSubscribers)
-
-	// Each subscriber reads until its context is cancelled, then continues
-	// reading with a fresh context until EOF.
-	var wg sync.WaitGroup
-	results := make([]string, numSubscribers)
-	for i, sub := range subs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			var all []byte
-			p := make([]byte, 64)
-			readCtx := ctx
-			ready <- struct{}{}
-			for {
-				n, err := sub.Read(readCtx, p)
-				if n > 0 {
-					all = append(all, p[:n]...)
-				}
-				if err == context.Canceled {
-					// Switch to the test context and keep reading.
-					readCtx = t.Context()
-					continue
-				}
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					t.Errorf("subscriber error %d: %v", i, err)
-					return
-				}
-			}
-			results[i] = string(all)
-		}()
-	}
-
-	// Wait for all subscribers to be ready before writing.
-	for range numSubscribers {
-		<-ready
-	}
-
-	// Cancel the context while subscribers are blocked, then write data.
-	// This exercises the AfterFunc broadcast waking blocked readers
-	// concurrently with new writes arriving.
-	cancel()
-
-	for range numWrites {
-		buf.Write([]byte(chunk))
-	}
-	buf.Close()
-
-	wg.Wait()
-
-	for i, r := range results {
-		if r != want {
-			t.Errorf("subscriber %d: got %d bytes, want %d bytes", i, len(r), len(want))
-		}
+	_, err := sub.Read(got)
+	if err != io.ErrClosedPipe {
+		t.Fatalf("expected io.ErrClosedPipe, got %v", err)
 	}
 }
 
@@ -210,7 +85,7 @@ func TestMultipleConcurrentSubscribers(t *testing.T) {
 	const numSubscribers = 5
 	const payload = "concurrent data"
 
-	subs := make([]output.Subscriber, numSubscribers)
+	subs := make([]io.ReadCloser, numSubscribers)
 	for i := range subs {
 		subs[i] = buf.Subscribe()
 	}
@@ -225,7 +100,7 @@ func TestMultipleConcurrentSubscribers(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			got := make([]byte, 64)
-			n, err := sub.Read(t.Context(), got)
+			n, err := sub.Read(got)
 			if err != nil {
 				t.Errorf("subscriber %d: Read failed: %v", i, err)
 				return
@@ -256,7 +131,7 @@ func TestManyConcurrentSubscribersWithIncrementalWrites(t *testing.T) {
 		want += chunk
 	}
 
-	subs := make([]output.Subscriber, numSubscribers)
+	subs := make([]io.ReadCloser, numSubscribers)
 	for i := range subs {
 		subs[i] = buf.Subscribe()
 	}
@@ -271,7 +146,7 @@ func TestManyConcurrentSubscribersWithIncrementalWrites(t *testing.T) {
 			var all []byte
 			p := make([]byte, 64)
 			for {
-				n, err := sub.Read(t.Context(), p)
+				n, err := sub.Read(p)
 				if n > 0 {
 					all = append(all, p[:n]...)
 				}

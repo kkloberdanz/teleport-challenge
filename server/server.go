@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -153,10 +154,16 @@ func (s *Server) StreamOutput(req *pb.StreamOutputRequest, stream grpc.ServerStr
 		}
 		return status.Errorf(codes.Internal, "failed to stream output: %v", err)
 	}
+	// Ensure we close when either the context is canceled or we exit this
+	// function
+	closeSub := sync.OnceFunc(func() { sub.Close() })
+	stop := context.AfterFunc(stream.Context(), closeSub)
+	defer stop()
+	defer closeSub()
 
 	buf := make([]byte, 4096) // For simplicity, hard code buffer size.
 	for {
-		n, err := sub.Read(stream.Context(), buf)
+		n, err := sub.Read(buf)
 		if n > 0 {
 			if sendErr := stream.Send(&pb.StreamOutputResponse{Data: buf[:n]}); sendErr != nil {
 				return sendErr
@@ -166,9 +173,10 @@ func (s *Server) StreamOutput(req *pb.StreamOutputRequest, stream grpc.ServerStr
 			return nil
 		}
 		if err != nil {
-			// If the client disconnected, return a proper gRPC
-			// status rather than leaking the raw context error.
-			if ctx := stream.Context(); ctx.Err() != nil {
+			// If the client disconnected, sub.Close() was called
+			// via the AfterFunc above, causing Read to return
+			// io.ErrClosedPipe. Map that to a proper gRPC status.
+			if errors.Is(err, io.ErrClosedPipe) {
 				return status.Error(codes.Canceled, "client disconnected")
 			}
 			return err

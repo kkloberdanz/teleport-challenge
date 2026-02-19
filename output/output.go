@@ -3,7 +3,6 @@
 package output
 
 import (
-	"context"
 	"errors"
 	"io"
 	"sync"
@@ -57,35 +56,27 @@ func (b *Buffer) Close() {
 	b.cond.Broadcast()
 }
 
-// Subscribe returns a new Subscriber starting at offset 0.
-func (b *Buffer) Subscribe() Subscriber {
-	return &InMemoryLogSubscriber{buf: b}
+// Subscribe returns a new subscriber starting at offset 0. The caller must
+// call Close when done reading.
+func (b *Buffer) Subscribe() io.ReadCloser {
+	return &InMemoryLogSubscriber{buf: b, done: make(chan struct{})}
 }
 
-// Subscriber reads data from a Buffer.
-type Subscriber interface {
-	Read(ctx context.Context, p []byte) (int, error)
-}
-
-// InMemoryLogSubscriber tracks a per-reader offset into a Buffer.
+// InMemoryLogSubscriber tracks a per-reader offset into a Buffer. It implements
+// io.ReadCloser so it can be used with io.Copy, etc.
 // Ideally, we would want to keep the logs in a database. For simplicity, we
 // will buffer the logs in memory, which this subscriber can be used to read.
 type InMemoryLogSubscriber struct {
-	buf    *Buffer
-	offset int
+	buf       *Buffer
+	offset    int
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // Read copies available data from the buffer into p, blocking until data is
-// available, the buffer is closed (io.EOF), or ctx is cancelled.
-func (s *InMemoryLogSubscriber) Read(ctx context.Context, p []byte) (int, error) {
-	// Make context cancellation wake cond.Wait.
-	stop := context.AfterFunc(ctx, func() {
-		s.buf.cond.L.Lock()
-		s.buf.cond.Broadcast()
-		s.buf.cond.L.Unlock()
-	})
-	defer stop()
-
+// available, the buffer is closed (io.EOF), or the subscriber is closed
+// (io.ErrClosedPipe).
+func (s *InMemoryLogSubscriber) Read(p []byte) (int, error) {
 	s.buf.mu.Lock()
 	defer s.buf.mu.Unlock()
 
@@ -93,8 +84,10 @@ func (s *InMemoryLogSubscriber) Read(ctx context.Context, p []byte) (int, error)
 		if s.buf.closed {
 			return 0, io.EOF
 		}
-		if err := ctx.Err(); err != nil {
-			return 0, err
+		select {
+		case <-s.done:
+			return 0, io.ErrClosedPipe
+		default:
 		}
 		s.buf.cond.Wait()
 	}
@@ -102,4 +95,16 @@ func (s *InMemoryLogSubscriber) Read(ctx context.Context, p []byte) (int, error)
 	n := copy(p, s.buf.buf[s.offset:])
 	s.offset += n
 	return n, nil
+}
+
+// Close signals the subscriber to stop reading. Any blocked Read call will
+// return io.ErrClosedPipe. Close is safe to call multiple times.
+func (s *InMemoryLogSubscriber) Close() error {
+	s.closeOnce.Do(func() {
+		close(s.done)
+		s.buf.cond.L.Lock()
+		s.buf.cond.Broadcast()
+		s.buf.cond.L.Unlock()
+	})
+	return nil
 }

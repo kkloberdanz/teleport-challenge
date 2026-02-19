@@ -4,6 +4,7 @@ package worker
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 
@@ -11,7 +12,6 @@ import (
 
 	"github.com/kkloberdanz/teleworker/auth"
 	"github.com/kkloberdanz/teleworker/job"
-	"github.com/kkloberdanz/teleworker/output"
 	"github.com/kkloberdanz/teleworker/resources"
 )
 
@@ -113,7 +113,8 @@ func (w *Worker) GetJobStatus(jobID string) (job.StatusResult, error) {
 }
 
 // StreamOutput returns a subscriber for the job's combined stdout/stderr.
-func (w *Worker) StreamOutput(jobID string) (output.Subscriber, error) {
+// The caller must close the returned ReadCloser when done.
+func (w *Worker) StreamOutput(jobID string) (io.ReadCloser, error) {
 	j, ok := w.getJob(jobID)
 	if !ok {
 		return nil, ErrJobNotFound
