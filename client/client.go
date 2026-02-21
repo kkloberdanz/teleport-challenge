@@ -85,14 +85,14 @@ func mapStatus(s pb.JobStatus) job.Status {
 // StreamOutput streams the combined stdout/stderr of a job into w.
 // It returns nil on EOF (job finished), or an error on failure.
 func (c *Client) StreamOutput(ctx context.Context, jobID string, w io.Writer) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	stream, err := c.client.StreamOutput(ctx, &pb.StreamOutputRequest{
 		JobId: jobID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to open output stream: %w", err)
-	}
-	if err := stream.CloseSend(); err != nil {
-		return fmt.Errorf("failed to close send: %w", err)
 	}
 	for {
 		resp, err := stream.Recv()
@@ -103,6 +103,15 @@ func (c *Client) StreamOutput(ctx context.Context, jobID string, w io.Writer) er
 			return fmt.Errorf("stream recv error: %w", err)
 		}
 		if _, err := w.Write(resp.GetData()); err != nil {
+			// Cancel the context to signal the server to stop sending.
+			cancel()
+
+			// Drain the stream to wait for the server to release the RPC.
+			for {
+				if _, recvErr := stream.Recv(); recvErr != nil {
+					break
+				}
+			}
 			return fmt.Errorf("write error: %w", err)
 		}
 	}
