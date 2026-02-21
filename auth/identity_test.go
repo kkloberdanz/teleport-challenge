@@ -65,93 +65,46 @@ func TestUnaryInterceptorAdmin(t *testing.T) {
 	}
 }
 
-func TestUnaryInterceptorNoPeer(t *testing.T) {
-	handler := func(ctx context.Context, req any) (any, error) {
-		t.Fatal("handler should not be called")
-		return nil, nil
+func TestUnaryInterceptorPermissionDenied(t *testing.T) {
+	tlsCtx := func(authInfo credentials.AuthInfo) context.Context {
+		return peer.NewContext(t.Context(), &peer.Peer{AuthInfo: authInfo})
+	}
+	certCtx := func(cn string, ou ...string) context.Context {
+		cert := &x509.Certificate{
+			Subject: pkix.Name{
+				CommonName:         cn,
+				OrganizationalUnit: ou,
+			},
+		}
+		return tlsCtx(credentials.TLSInfo{
+			State: tls.ConnectionState{
+				VerifiedChains: [][]*x509.Certificate{{cert}},
+			},
+		})
 	}
 
-	_, err := auth.UnaryInterceptor(t.Context(), nil, nil, handler)
-	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
-	}
-}
-
-func TestUnaryInterceptorNoTLS(t *testing.T) {
-	ctx := peer.NewContext(t.Context(), &peer.Peer{})
-	handler := func(ctx context.Context, req any) (any, error) {
-		t.Fatal("handler should not be called")
-		return nil, nil
+	tests := []struct {
+		name string
+		ctx  context.Context
+	}{
+		{"no peer", t.Context()},
+		{"no TLS", peer.NewContext(t.Context(), &peer.Peer{})},
+		{"empty chains", tlsCtx(credentials.TLSInfo{})},
+		{"empty OU", certCtx("alice")},
+		{"unrecognized role", certCtx("alice", "superuser")},
 	}
 
-	_, err := auth.UnaryInterceptor(ctx, nil, nil, handler)
-	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
-	}
-}
-
-func TestUnaryInterceptorEmptyChains(t *testing.T) {
-	tlsInfo := credentials.TLSInfo{
-		State: tls.ConnectionState{
-			VerifiedChains: nil,
-		},
-	}
-	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: tlsInfo})
-	handler := func(ctx context.Context, req any) (any, error) {
-		t.Fatal("handler should not be called")
-		return nil, nil
-	}
-
-	_, err := auth.UnaryInterceptor(ctx, nil, nil, handler)
-	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
-	}
-}
-
-func TestUnaryInterceptorEmptyOU(t *testing.T) {
-	cert := &x509.Certificate{
-		Subject: pkix.Name{
-			CommonName: "alice",
-		},
-	}
-	tlsInfo := credentials.TLSInfo{
-		State: tls.ConnectionState{
-			VerifiedChains: [][]*x509.Certificate{{cert}},
-		},
-	}
-	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: tlsInfo})
-	handler := func(ctx context.Context, req any) (any, error) {
-		t.Fatal("handler should not be called")
-		return nil, nil
-	}
-
-	_, err := auth.UnaryInterceptor(ctx, nil, nil, handler)
-	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
-	}
-}
-
-func TestUnaryInterceptorUnrecognizedRole(t *testing.T) {
-	cert := &x509.Certificate{
-		Subject: pkix.Name{
-			CommonName:         "alice",
-			OrganizationalUnit: []string{"superuser"},
-		},
-	}
-	tlsInfo := credentials.TLSInfo{
-		State: tls.ConnectionState{
-			VerifiedChains: [][]*x509.Certificate{{cert}},
-		},
-	}
-	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: tlsInfo})
-	handler := func(ctx context.Context, req any) (any, error) {
-		t.Fatal("handler should not be called")
-		return nil, nil
-	}
-
-	_, err := auth.UnaryInterceptor(ctx, nil, nil, handler)
-	if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
-		t.Fatalf("expected PermissionDenied, got %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := func(ctx context.Context, req any) (any, error) {
+				t.Fatal("handler should not be called")
+				return nil, nil
+			}
+			_, err := auth.UnaryInterceptor(tt.ctx, nil, nil, handler)
+			if s, ok := status.FromError(err); !ok || s.Code() != codes.PermissionDenied {
+				t.Fatalf("expected PermissionDenied, got %v", err)
+			}
+		})
 	}
 }
 
