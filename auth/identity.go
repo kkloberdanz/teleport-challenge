@@ -10,6 +10,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	RoleAdmin  = "admin"
+	RoleClient = "client"
+)
+
 // identityKey is used in context.WithValue.
 // It is suggested that this should be the concrete type struct{}
 //
@@ -42,7 +47,7 @@ func FromContext(ctx context.Context) (Identity, error) {
 
 // IsAdmin returns true if the identity has the admin role.
 func (id Identity) IsAdmin() bool {
-	return id.Role == "admin"
+	return id.Role == RoleAdmin
 }
 
 // identityFromTLS extracts the caller's identity from the gRPC peer TLS certificate.
@@ -66,7 +71,7 @@ func identityFromTLS(ctx context.Context) (Identity, error) {
 		return Identity{}, status.Error(codes.PermissionDenied, "certificate has no organizational unit")
 	}
 	role := cert.Subject.OrganizationalUnit[0]
-	if role != "admin" && role != "client" {
+	if role != RoleAdmin && role != RoleClient {
 		return Identity{}, status.Errorf(codes.PermissionDenied, "unrecognized role %q", role)
 	}
 
