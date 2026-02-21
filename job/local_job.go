@@ -182,7 +182,6 @@ func (l *localJob) Stop() error {
 // therefore it can only be called once.
 func (l *localJob) Wait() {
 	err := l.cmd.Wait()
-	l.output.Close()
 
 	// If the only error from cmd.Wait is that the output buffer was
 	// closed (e.g. during server shutdown), treat it as a clean exit
@@ -224,4 +223,6 @@ func (l *localJob) Wait() {
 		ec := 0
 		l.exitCode = &ec
 	}
+
+	l.output.Close()
 }
