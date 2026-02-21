@@ -3,10 +3,13 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 
 	"github.com/kkloberdanz/teleworker/job"
 	pb "github.com/kkloberdanz/teleworker/proto/teleworker/v1"
@@ -18,18 +21,10 @@ type Client struct {
 	client pb.TeleWorkerClient
 }
 
-// New creates a new Client connected to the teleworker gRPC server at address.
-// If no dial options are provided, insecure credentials are used by default.
-func New(address string, opts ...grpc.DialOption) (*Client, error) {
-	if len(opts) == 0 {
-		// TODO: Will replace with TLS in issue 5:
-		// https://github.com/kkloberdanz/teleport-challenge/issues/5
-		opts = []grpc.DialOption{
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		}
-	}
-
-	conn, err := grpc.NewClient(address, opts...)
+// New creates a new Client connected to the teleworker gRPC server at address
+// using the provided TLS configuration for mutual TLS authentication.
+func New(address string, tlsConf *tls.Config) (*Client, error) {
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(tlsConf)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
@@ -84,6 +79,41 @@ func mapStatus(s pb.JobStatus) job.Status {
 		return job.StatusKilled
 	default:
 		return job.StatusUnspecified
+	}
+}
+
+// StreamOutput streams the combined stdout/stderr of a job into w.
+// It returns nil on EOF (job finished), or an error on failure.
+func (c *Client) StreamOutput(ctx context.Context, jobID string, w io.Writer) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	stream, err := c.client.StreamOutput(ctx, &pb.StreamOutputRequest{
+		JobId: jobID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to open output stream: %w", err)
+	}
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("stream recv error: %w", err)
+		}
+		if _, err := w.Write(resp.GetData()); err != nil {
+			// Cancel the context to signal the server to stop sending.
+			cancel()
+
+			// Drain the stream to wait for the server to release the RPC.
+			for {
+				if _, recvErr := stream.Recv(); recvErr != nil {
+					break
+				}
+			}
+			return fmt.Errorf("write error: %w", err)
+		}
 	}
 }
 

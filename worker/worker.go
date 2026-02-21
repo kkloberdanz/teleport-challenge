@@ -4,11 +4,13 @@ package worker
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 
 	"github.com/google/uuid"
 
+	"github.com/kkloberdanz/teleworker/auth"
 	"github.com/kkloberdanz/teleworker/job"
 	"github.com/kkloberdanz/teleworker/resources"
 )
@@ -22,7 +24,8 @@ var ErrJobNotFound = errors.New("job not found")
 // server, consider adding a cleanup mechanism to avoid unbounded memory growth.
 type Worker struct {
 	mu        sync.RWMutex
-	jobs      map[string]job.Job // TODO: This would ideally be stored in a database. Using a Map for simplicity.
+	jobs      map[string]job.Job       // TODO: This would ideally be stored in a database. Using a Map for simplicity.
+	owners    map[string]auth.Identity // Map jobID to owner identity.
 	cgroupMgr resources.Manager
 	noCleanup bool
 }
@@ -37,21 +40,24 @@ type Options struct {
 func New(opts Options) *Worker {
 	return &Worker{
 		jobs:      make(map[string]job.Job),
+		owners:    make(map[string]auth.Identity),
 		cgroupMgr: opts.CgroupMgr,
 		noCleanup: opts.NoCleanup,
 	}
 }
 
-// trackJob adds the job to the map so we can track it.
-func (w *Worker) trackJob(jobID string, j job.Job) {
+// trackJob adds the job and its owner to the map so we can track it.
+func (w *Worker) trackJob(jobID string, j job.Job, owner auth.Identity) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	w.jobs[jobID] = j
+	w.owners[jobID] = owner
 }
 
-// StartJob starts a command and returns the job ID.
-func (w *Worker) StartJob(jobType job.JobType, command string, args []string) (string, error) {
+// StartJob starts a command and returns the job ID. The owner is recorded for
+// authorization checks.
+func (w *Worker) StartJob(jobType job.JobType, command string, args []string, owner auth.Identity) (string, error) {
 	jobID := uuid.New().String()
 
 	cg, err := w.cgroupMgr.CreateCgroup(jobID)
@@ -69,11 +75,23 @@ func (w *Worker) StartJob(jobType job.JobType, command string, args []string) (s
 		return "", err
 	}
 
-	w.trackJob(jobID, j)
+	w.trackJob(jobID, j, owner)
 
 	go j.Wait()
 
 	return jobID, nil
+}
+
+// GetJobOwner returns the identity of the job's owner, or ErrJobNotFound.
+func (w *Worker) GetJobOwner(jobID string) (auth.Identity, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	owner, ok := w.owners[jobID]
+	if !ok {
+		return auth.Identity{}, ErrJobNotFound
+	}
+	return owner, nil
 }
 
 func (w *Worker) getJob(jobID string) (job.Job, bool) {
@@ -92,6 +110,28 @@ func (w *Worker) GetJobStatus(jobID string) (job.StatusResult, error) {
 	}
 
 	return j.Status(), nil
+}
+
+// StreamOutput returns a subscriber for the job's combined stdout/stderr.
+// The caller must close the returned ReadCloser when done.
+func (w *Worker) StreamOutput(jobID string) (io.ReadCloser, error) {
+	j, ok := w.getJob(jobID)
+	if !ok {
+		return nil, ErrJobNotFound
+	}
+	return j.Output().Subscribe(), nil
+}
+
+// Shutdown closes all job output buffers, unblocking any StreamOutput
+// subscribers so that in-flight streaming RPCs can return cleanly during
+// graceful shutdown.
+func (w *Worker) Shutdown() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for _, j := range w.jobs {
+		j.Stop()
+	}
 }
 
 // StopJob kills a running job. Returns ErrJobNotFound or job.ErrJobNotRunning on failure.

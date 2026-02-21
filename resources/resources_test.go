@@ -6,8 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/goleak"
+
 	"github.com/kkloberdanz/teleworker/testutil"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestCreateAndCleanupCgroup(t *testing.T) {
 	mgr := testutil.RequireManager(t)

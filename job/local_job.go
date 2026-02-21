@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/kkloberdanz/teleworker/output"
 	"github.com/kkloberdanz/teleworker/resources"
 )
 
@@ -24,6 +25,7 @@ type localJob struct {
 	cmd       *exec.Cmd         // Underlying OS process.
 	cgroup    *resources.Cgroup // Resource limits: `nil` if running without cgroups.
 	noCleanup bool              // If true, skip cgroup cleanup on exit.
+	output    *output.Buffer    // Combined stdout/stderr capture.
 }
 
 // TODO: Ideally we would be running jobs as a different user. For simplicity,
@@ -67,6 +69,8 @@ func (l *localJob) Start() error {
 	}
 
 	cmd := l.buildCmd()
+	cmd.Stdout = l.output
+	cmd.Stderr = l.output
 	if err := cmd.Start(); err != nil {
 		if l.cgroup != nil {
 			l.cgroup.Cleanup()
@@ -85,6 +89,11 @@ func (l *localJob) Start() error {
 // ID returns the unique job identifier.
 func (l *localJob) ID() string {
 	return l.id
+}
+
+// Output returns the buffer capturing the job's combined stdout and stderr.
+func (l *localJob) Output() *output.Buffer {
+	return l.output
 }
 
 // Status returns the current job status and exit code. The exit code is nil
@@ -174,6 +183,13 @@ func (l *localJob) Stop() error {
 func (l *localJob) Wait() {
 	err := l.cmd.Wait()
 
+	// If the only error from cmd.Wait is that the output buffer was
+	// closed (e.g. during server shutdown), treat it as a clean exit
+	// rather than a failure.
+	if errors.Is(err, output.ErrClosed) {
+		err = nil
+	}
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -207,4 +223,6 @@ func (l *localJob) Wait() {
 		ec := 0
 		l.exitCode = &ec
 	}
+
+	l.output.Close()
 }

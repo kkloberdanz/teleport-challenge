@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/kkloberdanz/teleworker/output"
 	"github.com/kkloberdanz/teleworker/resources"
 )
 
@@ -47,6 +48,7 @@ type Job interface {
 	Status() StatusResult
 	Stop() error
 	Wait()
+	Output() *output.Buffer
 }
 
 // Options configures job construction.
@@ -68,6 +70,7 @@ func NewJob(jobType JobType, id, command string, args []string, opts Options) (J
 			status:    StatusSubmitted,
 			cgroup:    opts.Cgroup,
 			noCleanup: opts.NoCleanup,
+			output:    output.NewBuffer(),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown job type: %d", jobType)
