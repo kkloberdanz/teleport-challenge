@@ -95,7 +95,7 @@ func (c *Client) StreamOutput(ctx context.Context, jobID string, w io.Writer) er
 	}
 	for {
 		resp, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err,io.EOF) {
 			return nil
 		}
 		if err != nil {
