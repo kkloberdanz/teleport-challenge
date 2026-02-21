@@ -59,14 +59,14 @@ func (b *Buffer) Close() {
 // Subscribe returns a new subscriber starting at offset 0. The caller must
 // call Close when done reading.
 func (b *Buffer) Subscribe() io.ReadCloser {
-	return &InMemoryLogSubscriber{buf: b, done: make(chan struct{})}
+	return &inMemoryLogSubscriber{buf: b, done: make(chan struct{})}
 }
 
-// InMemoryLogSubscriber tracks a per-reader offset into a Buffer. It implements
+// inMemoryLogSubscriber tracks a per-reader offset into a Buffer. It implements
 // io.ReadCloser so it can be used with io.Copy, etc.
 // Ideally, we would want to keep the logs in a database. For simplicity, we
 // will buffer the logs in memory, which this subscriber can be used to read.
-type InMemoryLogSubscriber struct {
+type inMemoryLogSubscriber struct {
 	buf       *Buffer
 	offset    int
 	done      chan struct{}
@@ -76,7 +76,7 @@ type InMemoryLogSubscriber struct {
 // Read copies available data from the buffer into p, blocking until data is
 // available, the buffer is closed (io.EOF), or the subscriber is closed
 // (io.ErrClosedPipe).
-func (s *InMemoryLogSubscriber) Read(p []byte) (int, error) {
+func (s *inMemoryLogSubscriber) Read(p []byte) (int, error) {
 	s.buf.mu.Lock()
 	defer s.buf.mu.Unlock()
 
@@ -99,7 +99,7 @@ func (s *InMemoryLogSubscriber) Read(p []byte) (int, error) {
 
 // Close signals the subscriber to stop reading. Any blocked Read call will
 // return io.ErrClosedPipe. Close is safe to call multiple times.
-func (s *InMemoryLogSubscriber) Close() error {
+func (s *inMemoryLogSubscriber) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.done)
 		s.buf.cond.L.Lock()
